@@ -26,10 +26,10 @@ The whole app is one file: [`index.html`](index.html). Either:
 Quick categories:
 
 - **Paint-by-number guides** with numbered cells: Values, Palette, Arc, Zones, Dots, Hatch, Stipple, Hex/Tile/Triangle/Low-poly (palette mode), Brush (palette mode), Pixel (cross-stitch chart), Bead
-- **Vector cuttable / plottable**: Cut, Dither (stencil), Contour, TSP, Spiral, Flow, Brush, Layers, String, Maze
+- **Vector cuttable / plottable**: Cut, Dither (stencil), Contour, TSP, Spiral, Flow, Brush, Layers
 - **Print production**: CMYK separations (4 inks), Riso separations (custom inks)
-- **Final-output art**: Pixel sort, Glitch, Lichen (reaction-diffusion)
-- **Physical-art instruction sets**: ASCII (text dump), String (peg list + threading order)
+- **Final-output art**: Pixel sort, Glitch
+- **Physical-art instruction sets**: ASCII (text dump)
 
 ## Live camera
 

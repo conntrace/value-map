@@ -148,11 +148,6 @@ Single-file web app at `value-map-app/index.html`. Each mode below renders a scr
 **Output**: preview PNG (greyscale shaded stack) + one SVG per layer (cuttable).
 **Use**: laser-cut or Cricut-cut each SVG from cardstock, glue stacked = 3D paper relief sculpture.
 
-### String art
-**What it does**: greedy line-selection algorithm placing N pegs around the perimeter and choosing thread paths that best reproduce the image (Petros Vrellis approach).
-**Output**: preview PNG, SVG, and **threading instructions TXT** (peg coordinates + step-by-step weaving order).
-**Use**: real string art — drive nails into a board, follow the TXT instructions to weave thread between them.
-
 
 ---
 
@@ -161,7 +156,7 @@ These produce art directly from the image; no per-cell instructions:
 - Pixel sort, Glitch
 
 ## Vector cuttable / plottable modes
-- Cut, Dither (stencil), Contour, TSP, Spiral, Flow, Brush, Hex (palette), Tile (palette), Triangle (palette), Low-poly (palette), Layers, String
+- Cut, Dither (stencil), Contour, TSP, Spiral, Flow, Brush, Hex (palette), Tile (palette), Triangle (palette), Low-poly (palette), Layers
 
 ## Paint-by-number numbered grids
 - Values, Palette, Arc, Zones, Dots, Hatch, Stipple, Pixel art (palette → cross-stitch), Bead, Hex/Tile/Tri/Low-poly (in palette mode)
@@ -170,4 +165,4 @@ These produce art directly from the image; no per-cell instructions:
 - CMYK separations (4 inks), Riso separations (any inks), Layers (one SVG per depth band)
 
 ## Physical-art instruction sets (TXT)
-- ASCII (text dump), String (peg list + threading order)
+- ASCII (text dump)

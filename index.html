@@ -581,7 +581,6 @@
           <button data-mode="riso">Riso</button>
           <button data-mode="bead">Bead</button>
           <button data-mode="layers">Layers</button>
-          <button data-mode="string">String</button>
         </div>
 
         <div id="mode-values">
@@ -750,48 +749,6 @@
           <div class="hint" style="margin-bottom: 10px;">On: each layer's shape includes everything darker (good for stacked-paper depth). Off: each layer is just its own band.</div>
           <button id="lay-svg-each" class="btn ghost wide" style="font-size: 11.5px;">Download one SVG per layer</button>
           <div class="hint">For laser/Cricut: cut each SVG from a separate sheet, stack them in order — bottom = lightest, top = darkest.</div>
-        </div>
-
-        <div id="mode-string" style="display: none;">
-          <label class="field">Pegs</label>
-          <input type="number" id="strPegs" min="60" max="250" value="120" />
-          <div class="hint" style="margin-bottom: 10px;">Number of nails around the perimeter.</div>
-          <label class="field">Lines</label>
-          <input type="number" id="strLines" min="200" max="2500" value="500" />
-          <div class="hint" style="margin-bottom: 10px;">Total threads to draw. Higher = darker, more detailed image — but each adds compute time. 500 is the safe starting point. Push toward 1500 if your machine handles it.</div>
-          <label class="field">Pixel width</label>
-          <input type="number" id="strWidth" min="120" max="400" value="200" />
-          <div class="hint" style="margin-bottom: 10px;">Sampling resolution.</div>
-          <label class="field">Shape</label>
-          <div class="toggle" id="str-shape" style="margin-bottom: 12px;">
-            <button data-shape="circle" class="on">Circle</button>
-            <button data-shape="rect">Rectangle</button>
-          </div>
-          <label class="field">Line opacity (0-1)</label>
-          <input type="number" id="strAlpha" min="0.05" max="1" step="0.05" value="0.18" />
-          <div class="hint" style="margin-bottom: 10px;">How much darkness each thread "subtracts". Tune so the algorithm doesn't oversaturate.</div>
-          <label class="field">Stroke (px)</label>
-          <input type="number" id="strWeight" min="0.25" max="3" step="0.25" value="0.4" />
-          <div style="margin-bottom: 10px; margin-top:10px;">
-            <label class="field">Thread color</label>
-            <div style="display:flex; gap:8px; align-items:center;">
-              <label class="swatch-chip" style="background:#1A1A1A;">
-                <input type="color" id="strFgPicker" value="#1A1A1A" />
-              </label>
-              <input type="text" class="swatch-hex" id="strFgHex" value="#1A1A1A" maxlength="7" />
-            </div>
-          </div>
-          <div>
-            <label class="field">Background</label>
-            <div style="display:flex; gap:8px; align-items:center;">
-              <label class="swatch-chip" style="background:#FBF7EF;">
-                <input type="color" id="strBgPicker" value="#FBF7EF" />
-              </label>
-              <input type="text" class="swatch-hex" id="strBgHex" value="#FBF7EF" maxlength="7" />
-            </div>
-          </div>
-          <button id="str-instructions" class="btn ghost wide" style="font-size: 11.5px; margin-top: 10px;">Download peg list + threading order (TXT)</button>
-          <div class="hint">Numbered nail positions + the exact order to weave. The actual physical-art instruction set.</div>
         </div>
 
         <div id="mode-riso" style="display: none;">
@@ -6780,17 +6737,6 @@ function computeValueMap() {
     state.layData = runLayers();
     state.cellStripes = null;
     state.cellLens = null;
-  } else if (state.mode === 'string') {
-    // Async — kick off and re-render when it lands. Older state.strData stays
-    // visible during compute so the panel doesn't flash empty.
-    state.cellStripes = null;
-    state.cellLens = null;
-    runStringArt().then(data => {
-      if (!data || state.mode !== 'string') return;
-      state.strData = data;
-      renderMosaic();
-      renderNumberGrid();
-    });
   } else if (state.mode === 'arc') {
     const origins = activeArcOrigins();
     const D = origins.length;
@@ -7025,31 +6971,6 @@ function renderMosaic() {
     drawLayers(canvas.getContext('2d'), state.layData);
     $('#gray-meta').textContent = `${state.layData.layers.length} layers · ${state.layData.w}×${state.layData.h}`;
     $('#mosaic-title').textContent = 'Layered preview (darker = higher)';
-    $('#gray-legend').style.display = 'none';
-    $('#mosaic-palette-legend').style.display = 'none';
-    return;
-  }
-  if (state.mode === 'string') {
-    if (!state.strData) {
-      // Show a "computing…" placeholder so the user knows work is in flight
-      const ctx = canvas.getContext('2d');
-      canvas.width = 720; canvas.height = 720;
-      ctx.fillStyle = state.strBg;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#7A6F5C';
-      ctx.font = '500 16px Inter, system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('Computing string art…', canvas.width / 2, canvas.height / 2);
-      $('#gray-meta').textContent = 'Computing…';
-      $('#mosaic-title').textContent = 'String art';
-      $('#gray-legend').style.display = 'none';
-      $('#mosaic-palette-legend').style.display = 'none';
-      return;
-    }
-    drawStringArt(canvas.getContext('2d'), state.strData);
-    $('#gray-meta').textContent = `${state.strData.pegs.length} pegs · ${state.strData.lineSeq.length} lines`;
-    $('#mosaic-title').textContent = 'String art preview';
     $('#gray-legend').style.display = 'none';
     $('#mosaic-palette-legend').style.display = 'none';
     return;
@@ -7484,14 +7405,6 @@ function renderNumberGrid() {
     $('#num-palette-legend').style.display = 'none';
     return;
   }
-  if (state.mode === 'string') {
-    if (!state.strData) return;
-    drawStringArt(canvas.getContext('2d'), state.strData);
-    $('#num-meta').textContent = `${state.strData.lineSeq.length} threading steps`;
-    $('#num-hint').textContent = 'Use "Download peg list + threading order" for the physical-art instructions.';
-    $('#num-palette-legend').style.display = 'none';
-    return;
-  }
   if (state.mode === 'tri') {
     if (!state.triData) return;
     if (state.triStyle === 'palette') {
@@ -7652,9 +7565,7 @@ function generate() {
                                                       ? 'Bead chart PNG'
                                                       : state.mode === 'layers'
                                                         ? 'Layers preview PNG'
-                                                        : state.mode === 'string'
-                                                          ? 'String SVG'
-                                                          : 'Grayscale PNG';
+                                                        : 'Grayscale PNG';
 }
 
 let autoTimer = null;
@@ -7740,13 +7651,6 @@ $$('#mode button').forEach(btn => {
     $('#mode-riso').style.display = state.mode === 'riso' ? '' : 'none';
     $('#mode-bead').style.display = state.mode === 'bead' ? '' : 'none';
     $('#mode-layers').style.display = state.mode === 'layers' ? '' : 'none';
-    $('#mode-string').style.display = state.mode === 'string' ? '' : 'none';
-    // For heavy async modes, paint a placeholder synchronously *before* compute
-    // is even queued, so the UI feels instantly responsive on mode switch.
-    if (state.mode === 'string') {
-      state.strData = null;
-      renderMosaic();
-    }
     autoGenerateDebounced();
   });
 });
@@ -9149,64 +9053,6 @@ $('#lay-svg-each').addEventListener('click', async () => {
   btn.disabled = false;
 });
 
-/* String art wiring */
-$('#strPegs').addEventListener('input', e => {
-  state.strPegs = clamp(parseInt(e.target.value, 10) || 120, 60, 250);
-  autoGenerateDebounced();
-});
-$('#strLines').addEventListener('input', e => {
-  state.strLines = clamp(parseInt(e.target.value, 10) || 500, 200, 2500);
-  autoGenerateDebounced();
-});
-$('#strWidth').addEventListener('input', e => {
-  state.strWidth = clamp(parseInt(e.target.value, 10) || 200, 120, 400);
-  autoGenerateDebounced();
-});
-$$('#str-shape button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    $$('#str-shape button').forEach(b => b.classList.remove('on'));
-    btn.classList.add('on');
-    state.strShape = btn.dataset.shape;
-    autoGenerateDebounced();
-  });
-});
-$('#strAlpha').addEventListener('input', e => {
-  state.strAlpha = clamp(parseFloat(e.target.value) || 0.18, 0.05, 1);
-  autoGenerateDebounced();
-});
-$('#strWeight').addEventListener('input', e => {
-  state.strWeight = clamp(parseFloat(e.target.value) || 0.4, 0.25, 3);
-  autoGenerateDebounced();
-});
-function bindStrColor(prefix, key) {
-  const picker = $('#' + prefix + 'Picker');
-  const hex = $('#' + prefix + 'Hex');
-  const chip = picker.parentElement;
-  picker.addEventListener('input', e => {
-    state[key] = e.target.value;
-    hex.value = e.target.value.toUpperCase();
-    chip.style.background = e.target.value;
-    autoGenerateDebounced();
-  });
-  hex.addEventListener('input', e => {
-    const v = e.target.value.trim();
-    if (!/^#?[0-9a-fA-F]{6}$/.test(v)) return;
-    const norm = v.startsWith('#') ? v : '#' + v;
-    state[key] = norm;
-    picker.value = norm;
-    chip.style.background = norm;
-    autoGenerateDebounced();
-  });
-}
-bindStrColor('strFg', 'strFg');
-bindStrColor('strBg', 'strBg');
-$('#str-instructions').addEventListener('click', () => {
-  if (!state.strData) return;
-  const txt = buildStringArtInstructions(state.strData);
-  downloadText(txt, `string-art_${state.strData.pegs.length}pegs_${state.strData.lineSeq.length}lines.txt`, 'text/plain');
-});
-
-
 /* K-means palette extraction in OKLab */
 function extractPaletteKMeans(K, iters = 12) {
   if (!state.img || !state.crop) return null;
@@ -9544,12 +9390,6 @@ $('#export-gray').addEventListener('click', async () => {
     const cv = document.createElement('canvas');
     drawLayers(cv.getContext('2d'), state.layData);
     downloadCanvas(cv, `layers-preview_${state.layData.layers.length}lv.png`);
-    return;
-  } else if (state.mode === 'string') {
-    if (!state.strData) return;
-    const svg = buildStringArtSVG(state.strData);
-    const blob = new Blob([svg], { type: 'image/svg+xml' });
-    await downloadBlobAsync(blob, `string-art_${state.strData.pegs.length}p_${state.strData.lineSeq.length}l.svg`);
     return;
   } else if (state.mode === 'tri') {
     if (!state.triData) return;
