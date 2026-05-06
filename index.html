@@ -4732,14 +4732,20 @@ let _stringToken = 0;
 async function runStringArt() {
   const myToken = ++_stringToken;
   if (!state.img || !state.crop) return null;
-  // Yield immediately so the click handler returns and the "Computing…" placeholder
-  // gets a chance to paint before any heavy work begins.
-  await new Promise(r => setTimeout(r, 0));
-  if (myToken !== _stringToken) return null;
+  const yieldNow = () => new Promise(r => setTimeout(r, 0));
+  const cancelled = () => myToken !== _stringToken;
+
+  // Yield BEFORE any setup so the click handler returns and the placeholder paints.
+  await yieldNow();
+  if (cancelled()) return null;
+
   const c = state.crop;
-  const W = clamp(state.strWidth | 0, 120, 500);
+  const W = clamp(state.strWidth | 0, 120, 400);
   const H = Math.max(1, Math.round(W * (c.h / c.w)));
   const src = sampleCropToBuffer(W, H);
+  await yieldNow();
+  if (cancelled()) return null;
+
   // Work in inverted luminance so darker = higher intensity to "cancel" with thread
   const target = new Float32Array(W * H);
   for (let i = 0; i < W * H; i++) {
@@ -4748,6 +4754,8 @@ async function runStringArt() {
   }
   // Working canvas accumulates "ink" from lines drawn so far
   const work = new Float32Array(W * H);
+  await yieldNow();
+  if (cancelled()) return null;
 
   const numPegs = clamp(state.strPegs | 0, 60, 250);
   const pegs = [];
@@ -4814,11 +4822,11 @@ async function runStringArt() {
   // Don't pick the same peg, or one within 5 indices (avoids tiny chord lines)
   const minSep = Math.max(5, Math.floor(N / 20));
   for (let l = 0; l < totalLines; l++) {
-    // Yield to the browser every 10 lines so the UI stays responsive
-    // even on weaker machines, and bail if superseded.
-    if (l > 0 && l % 10 === 0) {
-      await new Promise(r => setTimeout(r, 0));
-      if (myToken !== _stringToken) return null;
+    // Yield every 2 lines on weak machines / iframes — chunks are tiny but
+    // the UI stays clearly interactive. Setup yields handled the early phase.
+    if (l > 0 && l % 2 === 0) {
+      await yieldNow();
+      if (cancelled()) return null;
     }
     let bestScore = -Infinity, bestPeg = -1;
     const [ax, ay] = pegs[cur];
