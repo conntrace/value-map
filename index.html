@@ -582,8 +582,6 @@
           <button data-mode="bead">Bead</button>
           <button data-mode="layers">Layers</button>
           <button data-mode="string">String</button>
-          <button data-mode="maze">Maze</button>
-          <button data-mode="rxdf">Lichen</button>
         </div>
 
         <div id="mode-values">
@@ -756,13 +754,13 @@
 
         <div id="mode-string" style="display: none;">
           <label class="field">Pegs</label>
-          <input type="number" id="strPegs" min="60" max="400" value="150" />
+          <input type="number" id="strPegs" min="60" max="250" value="120" />
           <div class="hint" style="margin-bottom: 10px;">Number of nails around the perimeter.</div>
           <label class="field">Lines</label>
-          <input type="number" id="strLines" min="200" max="4000" value="800" />
-          <div class="hint" style="margin-bottom: 10px;">Total threads to draw. Higher = darker, more detailed image — but each adds compute time. 800 is a sane starting point.</div>
+          <input type="number" id="strLines" min="200" max="2500" value="500" />
+          <div class="hint" style="margin-bottom: 10px;">Total threads to draw. Higher = darker, more detailed image — but each adds compute time. 500 is the safe starting point. Push toward 1500 if your machine handles it.</div>
           <label class="field">Pixel width</label>
-          <input type="number" id="strWidth" min="120" max="500" value="240" />
+          <input type="number" id="strWidth" min="120" max="400" value="200" />
           <div class="hint" style="margin-bottom: 10px;">Sampling resolution.</div>
           <label class="field">Shape</label>
           <div class="toggle" id="str-shape" style="margin-bottom: 12px;">
@@ -794,81 +792,6 @@
           </div>
           <button id="str-instructions" class="btn ghost wide" style="font-size: 11.5px; margin-top: 10px;">Download peg list + threading order (TXT)</button>
           <div class="hint">Numbered nail positions + the exact order to weave. The actual physical-art instruction set.</div>
-        </div>
-
-        <div id="mode-maze" style="display: none;">
-          <label class="field">Cell size (px)</label>
-          <input type="number" id="mazeCell" min="6" max="30" value="10" />
-          <div class="hint" style="margin-bottom: 10px;">Maze cell size in output units. Smaller = denser maze, harder puzzle.</div>
-          <label class="field">Pixel width</label>
-          <input type="number" id="mazeWidth" min="80" max="500" value="240" />
-          <div class="hint" style="margin-bottom: 10px;">Sampling resolution.</div>
-          <label class="field">Image strength</label>
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
-            <input type="range" id="mazeBias" min="0" max="100" value="85" style="width:120px;" />
-            <span id="mazeBiasVal">0.85</span>
-          </div>
-          <div class="hint" style="margin-bottom: 10px;">How strongly image darkness dictates wall density. 0 = random walls (real maze, no image). 1 = walls map the image directly: dark = walled, light = open.</div>
-          <label class="field">Wall stroke (px)</label>
-          <input type="number" id="mazeStroke" min="0.5" max="4" step="0.25" value="1" />
-          <div style="margin-bottom: 10px; margin-top: 10px;">
-            <label class="field">Wall color</label>
-            <div style="display:flex; gap:8px; align-items:center;">
-              <label class="swatch-chip" style="background:#1A1A1A;">
-                <input type="color" id="mazeFgPicker" value="#1A1A1A" />
-              </label>
-              <input type="text" class="swatch-hex" id="mazeFgHex" value="#1A1A1A" maxlength="7" />
-            </div>
-          </div>
-          <div>
-            <label class="field">Background</label>
-            <div style="display:flex; gap:8px; align-items:center;">
-              <label class="swatch-chip" style="background:#FBF7EF;">
-                <input type="color" id="mazeBgPicker" value="#FBF7EF" />
-              </label>
-              <input type="text" class="swatch-hex" id="mazeBgHex" value="#FBF7EF" maxlength="7" />
-            </div>
-          </div>
-        </div>
-
-        <div id="mode-rxdf" style="display: none;">
-          <label class="field">Pixel width</label>
-          <input type="number" id="rxdfWidth" min="80" max="240" value="140" />
-          <div class="hint" style="margin-bottom: 10px;">Process resolution. Smaller = much faster (cost is W²·iters).</div>
-          <label class="field">Iterations</label>
-          <input type="number" id="rxdfIters" min="50" max="3000" value="600" />
-          <div class="hint" style="margin-bottom: 10px;">Gray-Scott patterns need 500–2000 iterations to actually develop. Lower = embryonic blobs (presets won't differentiate).</div>
-          <label class="field">Pattern preset</label>
-          <div class="toggle" id="rxdf-preset" style="margin-bottom: 12px; flex-wrap: wrap;">
-            <button data-preset="coral" class="on">Coral</button>
-            <button data-preset="spots">Spots</button>
-            <button data-preset="stripes">Stripes</button>
-            <button data-preset="bubbles">Bubbles</button>
-          </div>
-          <label class="field">Image influence</label>
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
-            <input type="range" id="rxdfInfluence" min="0" max="100" value="40" style="width:120px;" />
-            <span id="rxdfInfluenceVal">0.40</span>
-          </div>
-          <div class="hint" style="margin-bottom: 10px;">How strongly image darkness biases pattern formation. Set to 0 to see the preset's pure character.</div>
-          <div style="margin-bottom: 10px;">
-            <label class="field">Pattern color</label>
-            <div style="display:flex; gap:8px; align-items:center;">
-              <label class="swatch-chip" style="background:#1A1A1A;">
-                <input type="color" id="rxdfFgPicker" value="#1A1A1A" />
-              </label>
-              <input type="text" class="swatch-hex" id="rxdfFgHex" value="#1A1A1A" maxlength="7" />
-            </div>
-          </div>
-          <div>
-            <label class="field">Background</label>
-            <div style="display:flex; gap:8px; align-items:center;">
-              <label class="swatch-chip" style="background:#FBF7EF;">
-                <input type="color" id="rxdfBgPicker" value="#FBF7EF" />
-              </label>
-              <input type="text" class="swatch-hex" id="rxdfBgHex" value="#FBF7EF" maxlength="7" />
-            </div>
-          </div>
         </div>
 
         <div id="mode-riso" style="display: none;">
@@ -1982,9 +1905,9 @@ const state = {
   layData: null,             // { w, h, layers: [{level, polylines: [...]}, ...] }
 
   // String art — peg-and-thread
-  strPegs: 150,
-  strLines: 800,
-  strWidth: 240,
+  strPegs: 120,
+  strLines: 500,
+  strWidth: 200,
   strShape: 'circle',
   strAlpha: 0.18,
   strWeight: 0.4,
@@ -4826,7 +4749,7 @@ async function runStringArt() {
   // Working canvas accumulates "ink" from lines drawn so far
   const work = new Float32Array(W * H);
 
-  const numPegs = clamp(state.strPegs | 0, 60, 400);
+  const numPegs = clamp(state.strPegs | 0, 60, 250);
   const pegs = [];
   if (state.strShape === 'rect') {
     const total = numPegs;
@@ -4886,7 +4809,7 @@ async function runStringArt() {
 
   const lineSeq = [];
   let cur = 0;
-  const totalLines = clamp(state.strLines | 0, 200, 6000);
+  const totalLines = clamp(state.strLines | 0, 200, 2500);
   const alpha = state.strAlpha;
   // Don't pick the same peg, or one within 5 indices (avoids tiny chord lines)
   const minSep = Math.max(5, Math.floor(N / 20));
@@ -6860,19 +6783,6 @@ function computeValueMap() {
       renderMosaic();
       renderNumberGrid();
     });
-  } else if (state.mode === 'maze') {
-    state.mazeData = runMaze();
-    state.cellStripes = null;
-    state.cellLens = null;
-  } else if (state.mode === 'rxdf') {
-    state.cellStripes = null;
-    state.cellLens = null;
-    runReactionDiffusion().then(data => {
-      if (!data || state.mode !== 'rxdf') return;
-      state.rxdfData = data;
-      renderMosaic();
-      renderNumberGrid();
-    });
   } else if (state.mode === 'arc') {
     const origins = activeArcOrigins();
     const D = origins.length;
@@ -7132,39 +7042,6 @@ function renderMosaic() {
     drawStringArt(canvas.getContext('2d'), state.strData);
     $('#gray-meta').textContent = `${state.strData.pegs.length} pegs · ${state.strData.lineSeq.length} lines`;
     $('#mosaic-title').textContent = 'String art preview';
-    $('#gray-legend').style.display = 'none';
-    $('#mosaic-palette-legend').style.display = 'none';
-    return;
-  }
-  if (state.mode === 'maze') {
-    if (!state.mazeData) return;
-    drawMaze(canvas.getContext('2d'), state.mazeData);
-    $('#gray-meta').textContent = `${state.mazeData.cols}×${state.mazeData.rows} cells`;
-    $('#mosaic-title').textContent = 'Maze preview';
-    $('#gray-legend').style.display = 'none';
-    $('#mosaic-palette-legend').style.display = 'none';
-    return;
-  }
-  if (state.mode === 'rxdf') {
-    if (!state.rxdfData) {
-      const ctx = canvas.getContext('2d');
-      canvas.width = 720; canvas.height = Math.round(720 * (state.crop ? state.crop.h / state.crop.w : 1));
-      ctx.fillStyle = state.rxdfBg;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#7A6F5C';
-      ctx.font = '500 16px Inter, system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`Computing reaction-diffusion (${state.rxdfIters} iterations)…`, canvas.width / 2, canvas.height / 2);
-      $('#gray-meta').textContent = 'Computing…';
-      $('#mosaic-title').textContent = 'Lichen / reaction-diffusion';
-      $('#gray-legend').style.display = 'none';
-      $('#mosaic-palette-legend').style.display = 'none';
-      return;
-    }
-    drawReactionDiffusion(canvas.getContext('2d'), state.rxdfData);
-    $('#gray-meta').textContent = `${state.rxdfData.w}×${state.rxdfData.h} · ${state.rxdfPreset} · ${state.rxdfIters} iters`;
-    $('#mosaic-title').textContent = 'Lichen / reaction-diffusion preview';
     $('#gray-legend').style.display = 'none';
     $('#mosaic-palette-legend').style.display = 'none';
     return;
@@ -7607,22 +7484,6 @@ function renderNumberGrid() {
     $('#num-palette-legend').style.display = 'none';
     return;
   }
-  if (state.mode === 'maze') {
-    if (!state.mazeData) return;
-    drawMaze(canvas.getContext('2d'), state.mazeData);
-    $('#num-meta').textContent = `${state.mazeData.cols}×${state.mazeData.rows}`;
-    $('#num-hint').textContent = 'Use Maze SVG to print at any size as a puzzle.';
-    $('#num-palette-legend').style.display = 'none';
-    return;
-  }
-  if (state.mode === 'rxdf') {
-    if (!state.rxdfData) return;
-    drawReactionDiffusion(canvas.getContext('2d'), state.rxdfData);
-    $('#num-meta').textContent = `${state.rxdfData.w}×${state.rxdfData.h}`;
-    $('#num-hint').textContent = 'Generative pattern — final-output. Image PNG export.';
-    $('#num-palette-legend').style.display = 'none';
-    return;
-  }
   if (state.mode === 'tri') {
     if (!state.triData) return;
     if (state.triStyle === 'palette') {
@@ -7785,11 +7646,7 @@ function generate() {
                                                         ? 'Layers preview PNG'
                                                         : state.mode === 'string'
                                                           ? 'String SVG'
-                                                          : state.mode === 'maze'
-                                                            ? 'Maze SVG'
-                                                            : state.mode === 'rxdf'
-                                                              ? 'Lichen PNG'
-                                                              : 'Grayscale PNG';
+                                                          : 'Grayscale PNG';
 }
 
 let autoTimer = null;
@@ -7876,8 +7733,12 @@ $$('#mode button').forEach(btn => {
     $('#mode-bead').style.display = state.mode === 'bead' ? '' : 'none';
     $('#mode-layers').style.display = state.mode === 'layers' ? '' : 'none';
     $('#mode-string').style.display = state.mode === 'string' ? '' : 'none';
-    $('#mode-maze').style.display = state.mode === 'maze' ? '' : 'none';
-    $('#mode-rxdf').style.display = state.mode === 'rxdf' ? '' : 'none';
+    // For heavy async modes, paint a placeholder synchronously *before* compute
+    // is even queued, so the UI feels instantly responsive on mode switch.
+    if (state.mode === 'string') {
+      state.strData = null;
+      renderMosaic();
+    }
     autoGenerateDebounced();
   });
 });
@@ -9282,15 +9143,15 @@ $('#lay-svg-each').addEventListener('click', async () => {
 
 /* String art wiring */
 $('#strPegs').addEventListener('input', e => {
-  state.strPegs = clamp(parseInt(e.target.value, 10) || 150, 60, 400);
+  state.strPegs = clamp(parseInt(e.target.value, 10) || 120, 60, 250);
   autoGenerateDebounced();
 });
 $('#strLines').addEventListener('input', e => {
-  state.strLines = clamp(parseInt(e.target.value, 10) || 800, 200, 4000);
+  state.strLines = clamp(parseInt(e.target.value, 10) || 500, 200, 2500);
   autoGenerateDebounced();
 });
 $('#strWidth').addEventListener('input', e => {
-  state.strWidth = clamp(parseInt(e.target.value, 10) || 240, 120, 500);
+  state.strWidth = clamp(parseInt(e.target.value, 10) || 200, 120, 400);
   autoGenerateDebounced();
 });
 $$('#str-shape button').forEach(btn => {
@@ -9337,91 +9198,6 @@ $('#str-instructions').addEventListener('click', () => {
   downloadText(txt, `string-art_${state.strData.pegs.length}pegs_${state.strData.lineSeq.length}lines.txt`, 'text/plain');
 });
 
-/* Maze wiring */
-$('#mazeCell').addEventListener('input', e => {
-  state.mazeCell = clamp(parseInt(e.target.value, 10) || 10, 6, 30);
-  autoGenerateDebounced();
-});
-$('#mazeWidth').addEventListener('input', e => {
-  state.mazeWidth = clamp(parseInt(e.target.value, 10) || 240, 80, 500);
-  autoGenerateDebounced();
-});
-$('#mazeBias').addEventListener('input', e => {
-  state.mazeBias = clamp(parseInt(e.target.value, 10) / 100, 0, 1);
-  $('#mazeBiasVal').textContent = state.mazeBias.toFixed(2);
-  autoGenerateDebounced();
-});
-$('#mazeStroke').addEventListener('input', e => {
-  state.mazeStroke = clamp(parseFloat(e.target.value) || 1, 0.5, 4);
-  autoGenerateDebounced();
-});
-function bindMazeColor(prefix, key) {
-  const picker = $('#' + prefix + 'Picker');
-  const hex = $('#' + prefix + 'Hex');
-  const chip = picker.parentElement;
-  picker.addEventListener('input', e => {
-    state[key] = e.target.value;
-    hex.value = e.target.value.toUpperCase();
-    chip.style.background = e.target.value;
-    autoGenerateDebounced();
-  });
-  hex.addEventListener('input', e => {
-    const v = e.target.value.trim();
-    if (!/^#?[0-9a-fA-F]{6}$/.test(v)) return;
-    const norm = v.startsWith('#') ? v : '#' + v;
-    state[key] = norm;
-    picker.value = norm;
-    chip.style.background = norm;
-    autoGenerateDebounced();
-  });
-}
-bindMazeColor('mazeFg', 'mazeFg');
-bindMazeColor('mazeBg', 'mazeBg');
-
-/* Reaction-diffusion wiring */
-$('#rxdfWidth').addEventListener('input', e => {
-  state.rxdfWidth = clamp(parseInt(e.target.value, 10) || 160, 80, 240);
-  autoGenerateDebounced();
-});
-$('#rxdfIters').addEventListener('input', e => {
-  state.rxdfIters = clamp(parseInt(e.target.value, 10) || 600, 50, 3000);
-  autoGenerateDebounced();
-});
-$$('#rxdf-preset button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    $$('#rxdf-preset button').forEach(b => b.classList.remove('on'));
-    btn.classList.add('on');
-    state.rxdfPreset = btn.dataset.preset;
-    autoGenerateDebounced();
-  });
-});
-$('#rxdfInfluence').addEventListener('input', e => {
-  state.rxdfInfluence = clamp(parseInt(e.target.value, 10) / 100, 0, 1);
-  $('#rxdfInfluenceVal').textContent = state.rxdfInfluence.toFixed(2);
-  autoGenerateDebounced();
-});
-function bindRxdfColor(prefix, key) {
-  const picker = $('#' + prefix + 'Picker');
-  const hex = $('#' + prefix + 'Hex');
-  const chip = picker.parentElement;
-  picker.addEventListener('input', e => {
-    state[key] = e.target.value;
-    hex.value = e.target.value.toUpperCase();
-    chip.style.background = e.target.value;
-    autoGenerateDebounced();
-  });
-  hex.addEventListener('input', e => {
-    const v = e.target.value.trim();
-    if (!/^#?[0-9a-fA-F]{6}$/.test(v)) return;
-    const norm = v.startsWith('#') ? v : '#' + v;
-    state[key] = norm;
-    picker.value = norm;
-    chip.style.background = norm;
-    autoGenerateDebounced();
-  });
-}
-bindRxdfColor('rxdfFg', 'rxdfFg');
-bindRxdfColor('rxdfBg', 'rxdfBg');
 
 /* K-means palette extraction in OKLab */
 function extractPaletteKMeans(K, iters = 12) {
@@ -9766,21 +9542,6 @@ $('#export-gray').addEventListener('click', async () => {
     const svg = buildStringArtSVG(state.strData);
     const blob = new Blob([svg], { type: 'image/svg+xml' });
     await downloadBlobAsync(blob, `string-art_${state.strData.pegs.length}p_${state.strData.lineSeq.length}l.svg`);
-    return;
-  } else if (state.mode === 'maze') {
-    if (!state.mazeData) return;
-    const svg = buildMazeSVG(state.mazeData);
-    const blob = new Blob([svg], { type: 'image/svg+xml' });
-    await downloadBlobAsync(blob, `maze_${state.mazeData.cols}x${state.mazeData.rows}.svg`);
-    return;
-  } else if (state.mode === 'rxdf') {
-    if (!state.rxdfData) return;
-    const cv = document.createElement('canvas');
-    cv.width = state.rxdfData.w; cv.height = state.rxdfData.h;
-    const id = cv.getContext('2d').createImageData(state.rxdfData.w, state.rxdfData.h);
-    id.data.set(state.rxdfData.image);
-    cv.getContext('2d').putImageData(id, 0, 0);
-    downloadCanvas(cv, `lichen_${state.rxdfData.w}x${state.rxdfData.h}_${state.rxdfPreset}.png`);
     return;
   } else if (state.mode === 'tri') {
     if (!state.triData) return;

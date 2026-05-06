@@ -153,24 +153,15 @@ Single-file web app at `value-map-app/index.html`. Each mode below renders a scr
 **Output**: preview PNG, SVG, and **threading instructions TXT** (peg coordinates + step-by-step weaving order).
 **Use**: real string art — drive nails into a board, follow the TXT instructions to weave thread between them.
 
-### Maze
-**What it does**: image-driven randomized maze where corridor density biases toward darker areas.
-**Output**: SVG (printable puzzle).
-**Use**: print the puzzle. The maze structurally encodes the image — solve it and the pattern emerges.
-
-### Lichen
-**What it does**: Gray-Scott reaction-diffusion seeded by image darkness with image-modulated f/k parameters.
-**Output**: PNG (final pattern).
-**Use**: print as final artwork; pattern resembles natural growth, lichen, coral, leopard spots, depending on preset.
 
 ---
 
 ## Final-output-only modes
 These produce art directly from the image; no per-cell instructions:
-- Pixel sort, Glitch, Lichen
+- Pixel sort, Glitch
 
 ## Vector cuttable / plottable modes
-- Cut, Dither (stencil), Contour, TSP, Spiral, Flow, Brush, Hex (palette), Tile (palette), Triangle (palette), Low-poly (palette), Layers, String, Maze
+- Cut, Dither (stencil), Contour, TSP, Spiral, Flow, Brush, Hex (palette), Tile (palette), Triangle (palette), Low-poly (palette), Layers, String
 
 ## Paint-by-number numbered grids
 - Values, Palette, Arc, Zones, Dots, Hatch, Stipple, Pixel art (palette → cross-stitch), Bead, Hex/Tile/Tri/Low-poly (in palette mode)
