@@ -39,6 +39,30 @@ Built-in camera mode pipes a live video feed through any selected mode at ~10 fp
 
 Plain HTML/JS/CSS. No build step. No dependencies.
 
+## Embedding on your website
+
+The app is hosted via GitHub Pages at:
+
+```
+https://conntrace.github.io/value-map/
+```
+
+Drop this into a page on your site:
+
+```html
+<iframe
+  src="https://conntrace.github.io/value-map/"
+  allow="camera"
+  width="100%"
+  height="900"
+  style="border: 0; max-width: 1400px;">
+</iframe>
+```
+
+The `allow="camera"` attribute is required for the live-camera mode to work inside the iframe — without it, the browser will silently deny `getUserMedia` requests from the embedded page.
+
+For a full-page experience, you can also link directly to it instead of iframing.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
