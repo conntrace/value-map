@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+._*
+
+# Editor
+.vscode/
+.idea/
+
+# Local server output
+*.log
