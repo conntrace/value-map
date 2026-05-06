@@ -47,21 +47,35 @@ The app is hosted via GitHub Pages at:
 https://conntrace.github.io/value-map/
 ```
 
-Drop this into a page on your site:
+### Auto-resizing iframe (recommended)
+
+The embedded app posts its current scroll height to the parent page so the iframe resizes itself as content grows or shrinks. Drop this into a Code Block on your site:
 
 ```html
 <iframe
+  id="value-map-iframe"
   src="https://conntrace.github.io/value-map/"
-  allow="camera"
-  width="100%"
-  height="900"
-  style="border: 0; max-width: 1400px;">
+  allow="camera; fullscreen"
+  loading="lazy"
+  style="width: 100%; height: 1400px; border: 0; display: block;">
 </iframe>
+<script>
+  window.addEventListener('message', function (e) {
+    if (e.origin !== 'https://conntrace.github.io') return;
+    if (e.data && e.data.type === 'value-map-height') {
+      var f = document.getElementById('value-map-iframe');
+      if (f) f.style.height = e.data.height + 'px';
+    }
+  });
+</script>
 ```
 
-The `allow="camera"` attribute is required for the live-camera mode to work inside the iframe — without it, the browser will silently deny `getUserMedia` requests from the embedded page.
+### Notes
 
-For a full-page experience, you can also link directly to it instead of iframing.
+- `allow="camera"` lets the live-camera mode work inside the frame. Without it, `getUserMedia` is silently denied.
+- The 1400px starting height is just a fallback for the brief moment before the first resize message arrives.
+- The auto-resize listens for messages only from the GitHub Pages origin (`https://conntrace.github.io`), so it's safe to drop into any page.
+- For a full-page experience, you can also link directly to the URL instead of iframing.
 
 ## License
 
