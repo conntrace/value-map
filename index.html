@@ -9959,6 +9959,30 @@ $('#region-dir').addEventListener('click', e => {
   // Also throttle-poll for any size changes that ResizeObserver misses
   setInterval(postHeight, 1000);
 })();
+
+/* =========================================================
+   Camera-mode hook — when the app runs on the handheld camera build
+   it is loaded with ?camera=1. We expose a small internal API on
+   window.__valueMap and lazy-load camera.js, which drives the live
+   pipeline from hardware events (shutter button, accelerometer).
+   In the normal web build this block is inert: nothing is fetched.
+========================================================= */
+window.__valueMap = {
+  state,
+  $, $$,
+  startLive, stopLive,
+  generate,
+  get liveActive() { return state.live; },
+};
+(function () {
+  const params = new URLSearchParams(location.search);
+  if (params.get('camera') !== '1') return;
+  document.body.classList.add('camera-mode');
+  const s = document.createElement('script');
+  s.src = 'camera.js';
+  s.defer = true;
+  document.head.appendChild(s);
+})();
 </script>
 </body>
 </html>

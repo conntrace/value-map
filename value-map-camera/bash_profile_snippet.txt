@@ -1,0 +1,10 @@
+# Add this to the END of /home/pi/.bash_profile
+# (create the file if it doesn't exist).
+#
+# It auto-launches the kiosk on tty1 when the pi user logs in to the
+# console. Combined with raspi-config "Console Autologin", this gives
+# you a bulletproof boot-straight-into-camera setup with no desktop.
+
+if [[ -z "$DISPLAY" && "$XDG_VTNR" == "1" ]]; then
+  exec startx /home/pi/value-map/value-map-camera/kiosk.sh -- -nocursor
+fi

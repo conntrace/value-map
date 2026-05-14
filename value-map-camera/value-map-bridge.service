@@ -1,0 +1,16 @@
+[Unit]
+Description=Value Map Camera — hardware bridge (HTTP + WebSocket + GPIO)
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/value-map/value-map-camera
+ExecStart=/usr/bin/python3 /home/pi/value-map/value-map-camera/bridge.py
+Restart=on-failure
+RestartSec=2
+# Captures go here; make sure the pi user owns it
+Environment=VALUEMAP_CAPTURE_DIR=/home/pi/captures
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+# Python dependencies for the camera bridge.
+# Install with:  pip3 install -r requirements.txt
+#
+# gpiozero is NOT listed — it ships pre-installed on Raspberry Pi OS.
+# The bridge degrades gracefully if either of these is missing, so you
+# can run it on a laptop for testing before the Pi parts arrive.
+
+aiohttp>=3.9
+smbus2>=0.4
