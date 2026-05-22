@@ -123,6 +123,11 @@ Single-file web app at `value-map-app/index.html`. Each mode below renders a scr
 **Output**: PNG (1:1 resolution preserves the chunky look). **Palette mode**: cross-stitch chart PNG + CSV.
 **Use**: cross-stitch, perler beads, mosaic, pixel-art painting.
 
+### Sprite
+**What it does**: game-asset pixel art — downsamples to an exact sprite size (16, 32, 64…), quantizes to a console-accurate palette (Game Boy, NES, PICO-8, C64, CGA, 1-bit), an auto-extracted palette, or your custom palette. Optional ordered/diffusion dithering, transparent background, and a 1px silhouette outline.
+**Output**: true 1:1 PNG with transparency (the actual game asset), a ×8 scaled PNG for sharing, and a per-pixel palette-index CSV for tile editors.
+**Use**: drop straight into a game engine as a sprite. The CSV imports into tile/map editors.
+
 ### Glitch
 **What it does**: per-channel RGB offset (chromatic aberration) with optional row-tear.
 **Output**: PNG (final artwork).

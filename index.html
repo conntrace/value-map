@@ -576,6 +576,7 @@
           <button data-mode="voronoi">Voronoi</button>
           <button data-mode="tile">Tile</button>
           <button data-mode="pixel">Pixel</button>
+          <button data-mode="sprite">Sprite</button>
           <button data-mode="glitch">Glitch</button>
           <button data-mode="tri">Triangle</button>
           <button data-mode="riso">Riso</button>
@@ -828,6 +829,75 @@
             <input type="checkbox" id="pxShowGrid" />
             <span>Show pixel grid</span>
           </label>
+        </div>
+
+        <div id="mode-sprite" style="display: none;">
+          <label class="field">Sprite size (px)</label>
+          <input type="number" id="sprSize" min="8" max="256" value="32" />
+          <div class="hint" style="margin-bottom: 10px;">Longest edge of the sprite in real pixels. Common: 16, 32, 48, 64. The other edge follows the crop's aspect.</div>
+          <label class="field">Palette source</label>
+          <div class="toggle" id="spr-palmode" style="margin-bottom: 12px;">
+            <button data-pm="console" class="on">Console</button>
+            <button data-pm="auto">Auto-extract</button>
+            <button data-pm="custom">Custom</button>
+          </div>
+          <div id="spr-console-config" style="margin-bottom: 12px;">
+            <label class="field">Console palette</label>
+            <select id="sprConsole" class="swatch-hex" style="width: 100%; cursor: pointer;">
+              <option value="gameboy">Game Boy — 4 greens</option>
+              <option value="1bit">1-bit — black &amp; white</option>
+              <option value="cga">CGA — 4 color</option>
+              <option value="pico8" selected>PICO-8 — 16 color</option>
+              <option value="c64">Commodore 64 — 16 color</option>
+              <option value="nes">NES — 24 color subset</option>
+            </select>
+          </div>
+          <div id="spr-auto-config" style="display:none; margin-bottom: 12px;">
+            <label class="field">Extracted colors</label>
+            <div class="toggle" id="spr-colors">
+              <button data-n="4">4</button>
+              <button data-n="8" class="on">8</button>
+              <button data-n="16">16</button>
+              <button data-n="32">32</button>
+            </div>
+            <div class="hint">k-means clusters the image into this many colors.</div>
+          </div>
+          <div id="spr-custom-config" style="display:none; margin-bottom: 12px;">
+            <div class="hint">Uses your palette from Palette mode (edit it there).</div>
+          </div>
+          <label class="field">Dithering</label>
+          <div class="toggle" id="spr-dither" style="margin-bottom: 12px;">
+            <button data-d="none" class="on">None</button>
+            <button data-d="bayer">Ordered</button>
+            <button data-d="fs">Diffusion</button>
+          </div>
+          <div class="hint" style="margin-bottom: 10px;">Dithering fakes extra shades from a small palette — classic for low-color sprites.</div>
+          <label class="check-row" style="margin-bottom: 8px;">
+            <input type="checkbox" id="sprTransparent" />
+            <span>Transparent background</span>
+          </label>
+          <div id="spr-bgtol" style="display:none; margin-bottom: 10px;">
+            <label class="field">BG tolerance</label>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <input type="range" id="sprBgTol" min="2" max="40" value="14" style="width:120px;" />
+              <span id="sprBgTolVal">14</span>
+            </div>
+            <div class="hint">Pixels within this distance of the corner color become transparent.</div>
+          </div>
+          <label class="check-row" style="margin-bottom: 8px;">
+            <input type="checkbox" id="sprOutline" />
+            <span>Add outline</span>
+          </label>
+          <div id="spr-outline-color" style="display:none; margin-bottom: 10px;">
+            <label class="field">Outline color</label>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <label class="swatch-chip" style="background:#1A1A1A;">
+                <input type="color" id="sprOutlinePicker" value="#1A1A1A" />
+              </label>
+              <input type="text" class="swatch-hex" id="sprOutlineHex" value="#1A1A1A" maxlength="7" />
+            </div>
+            <div class="hint">Requires transparent background — the outline rings the sprite silhouette.</div>
+          </div>
         </div>
 
         <div id="mode-glitch" style="display: none;">
@@ -1918,6 +1988,18 @@ const state = {
   pxShowGrid: false,
   pxData: null,           // { w, h, image: Uint8ClampedArray }
 
+  // Sprite — game-asset pixel art
+  sprSize: 32,            // longest edge in real pixels
+  sprPaletteMode: 'console',  // 'console' | 'auto' | 'custom'
+  sprConsole: 'pico8',
+  sprColors: 8,           // for auto-extract
+  sprDither: 'none',      // 'none' | 'bayer' | 'fs'
+  sprTransparent: false,
+  sprBgTol: 14,
+  sprOutline: false,
+  sprOutlineColor: '#1A1A1A',
+  sprData: null,          // { w, h, rgba, palette, counts }
+
   // Glitch — RGB channel shift
   gltWidth: 400,
   gltRX: 4, gltRY: 0,
@@ -2333,6 +2415,182 @@ function drawPixelArt(ctx, data) {
       ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(targetW, py); ctx.stroke();
     }
   }
+}
+
+/* =========================================================
+   Sprite — game-asset pixel art. Downsamples to an exact sprite
+   size, quantizes to a console / extracted / custom palette with
+   optional dithering, optional background transparency + outline.
+   Output is a true 1:1 PNG ready to drop into a game.
+========================================================= */
+const SPRITE_PALETTES = {
+  gameboy: ['#0F380F', '#306230', '#8BAC0F', '#9BBC0F'],
+  '1bit':  ['#000000', '#FFFFFF'],
+  cga:     ['#000000', '#55FFFF', '#FF55FF', '#FFFFFF'],
+  pico8:   ['#000000', '#1D2B53', '#7E2553', '#008751', '#AB5236', '#5F574F',
+            '#C2C3C7', '#FFF1E8', '#FF004D', '#FFA300', '#FFEC27', '#00E436',
+            '#29ADFF', '#83769C', '#FF77A8', '#FFCCAA'],
+  c64:     ['#000000', '#FFFFFF', '#880000', '#AAFFEE', '#CC44CC', '#00CC55',
+            '#0000AA', '#EEEE77', '#DD8855', '#664400', '#FF7777', '#333333',
+            '#777777', '#AAFF66', '#0088FF', '#BBBBBB'],
+  nes:     ['#000000', '#FCFCFC', '#F8F8F8', '#BCBCBC', '#7C7C7C',
+            '#A4E4FC', '#3CBCFC', '#0078F8', '#0000FC',
+            '#B8B8F8', '#6888FC', '#0058F8', '#0000BC',
+            '#F8B8F8', '#9878F8', '#6844FC', '#4428BC',
+            '#F8A4C0', '#F878F8', '#D800CC', '#940084',
+            '#F8B8B8', '#F85898', '#E40058', '#A80020'],
+};
+
+function runSprite() {
+  if (!state.img || !state.crop) return null;
+  const c = state.crop;
+  const longEdge = clamp(state.sprSize | 0, 8, 256);
+  // Derive W,H from crop aspect; the longest edge gets the target size.
+  const ar = c.w / c.h;
+  let W, H;
+  if (ar >= 1) { W = longEdge; H = Math.max(1, Math.round(longEdge / ar)); }
+  else { H = longEdge; W = Math.max(1, Math.round(longEdge * ar)); }
+  const src = sampleCropToBuffer(W, H);   // box-averaged downscale, RGBA
+  const N = W * H;
+
+  // ---- 1. Background mask (optional transparency) --------------------
+  const TRANS = -1, OUTLINE = -2;
+  const idx = new Int16Array(N);
+  if (state.sprTransparent) {
+    // Average the four corners as the background color.
+    const corners = [0, W - 1, (H - 1) * W, (H - 1) * W + (W - 1)];
+    let br = 0, bgc = 0, bb = 0;
+    for (const ci of corners) {
+      br += src[ci * 4]; bgc += src[ci * 4 + 1]; bb += src[ci * 4 + 2];
+    }
+    br /= 4; bgc /= 4; bb /= 4;
+    const tol = state.sprBgTol;
+    const tol2 = tol * tol * 9;   // squared distance threshold
+    for (let i = 0; i < N; i++) {
+      const dr = src[i*4] - br, dg = src[i*4+1] - bgc, db = src[i*4+2] - bb;
+      idx[i] = (dr*dr + dg*dg + db*db) < tol2 ? TRANS : 0;
+    }
+  }
+
+  // ---- 2. Build the working palette ----------------------------------
+  let palHex;
+  if (state.sprPaletteMode === 'console') {
+    palHex = (SPRITE_PALETTES[state.sprConsole] || SPRITE_PALETTES.pico8).slice();
+  } else if (state.sprPaletteMode === 'auto') {
+    palHex = extractPaletteKMeans(clamp(state.sprColors | 0, 2, 32)) || state.palette.slice();
+  } else {
+    palHex = state.palette.slice();
+  }
+  const palRGB = palHex.map(hexToRgb);
+  const palLab = palRGB.map(([r, g, b]) => rgbToOklab(r, g, b));
+
+  // ---- 3. Quantize to the palette, with optional dithering -----------
+  const nearest = (r, g, b) => nearestPaletteColor(
+    clamp(r,0,255), clamp(g,0,255), clamp(b,0,255), palLab, palRGB);
+
+  if (state.sprDither === 'fs') {
+    // Floyd-Steinberg error diffusion in a working RGB float buffer.
+    const buf = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      buf[i*3] = src[i*4]; buf[i*3+1] = src[i*4+1]; buf[i*3+2] = src[i*4+2];
+    }
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x, k = i * 3;
+        if (idx[i] === TRANS) continue;
+        const pi = nearest(buf[k], buf[k+1], buf[k+2]);
+        idx[i] = pi;
+        const er = buf[k]   - palRGB[pi][0];
+        const eg = buf[k+1] - palRGB[pi][1];
+        const eb = buf[k+2] - palRGB[pi][2];
+        const push = (di, w) => {
+          if (di < 0 || di >= N || idx[di] === TRANS) return;
+          buf[di*3] += er*w; buf[di*3+1] += eg*w; buf[di*3+2] += eb*w;
+        };
+        if (x + 1 < W)            push(i+1,     7/16);
+        if (y + 1 < H && x > 0)   push(i+W-1,   3/16);
+        if (y + 1 < H)            push(i+W,     5/16);
+        if (y + 1 < H && x+1 < W) push(i+W+1,   1/16);
+      }
+    }
+  } else if (state.sprDither === 'bayer') {
+    const M = BAYER_4, m = 4, norm = 16;
+    for (let i = 0; i < N; i++) {
+      if (idx[i] === TRANS) continue;
+      const x = i % W, y = (i / W) | 0;
+      const bias = ((M[y % m][x % m] + 0.5) / norm - 0.5) * 64;
+      idx[i] = nearest(src[i*4] + bias, src[i*4+1] + bias, src[i*4+2] + bias);
+    }
+  } else {
+    for (let i = 0; i < N; i++) {
+      if (idx[i] === TRANS) continue;
+      idx[i] = nearest(src[i*4], src[i*4+1], src[i*4+2]);
+    }
+  }
+
+  // ---- 4. Outline — grow a 1px ring around the silhouette ------------
+  if (state.sprOutline && state.sprTransparent) {
+    const ring = [];
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (idx[i] !== TRANS) continue;
+        if ((x > 0     && idx[i-1] >= 0) ||
+            (x < W - 1 && idx[i+1] >= 0) ||
+            (y > 0     && idx[i-W] >= 0) ||
+            (y < H - 1 && idx[i+W] >= 0)) ring.push(i);
+      }
+    }
+    for (const i of ring) idx[i] = OUTLINE;
+  }
+
+  // ---- 5. Build the RGBA buffer + per-color counts -------------------
+  const rgba = new Uint8ClampedArray(N * 4);
+  const counts = new Int32Array(palRGB.length);
+  const outline = hexToRgb(state.sprOutlineColor);
+  for (let i = 0; i < N; i++) {
+    const p = idx[i];
+    if (p === TRANS) {
+      rgba[i*4+3] = 0;
+    } else if (p === OUTLINE) {
+      rgba[i*4] = outline[0]; rgba[i*4+1] = outline[1];
+      rgba[i*4+2] = outline[2]; rgba[i*4+3] = 255;
+    } else {
+      rgba[i*4] = palRGB[p][0]; rgba[i*4+1] = palRGB[p][1];
+      rgba[i*4+2] = palRGB[p][2]; rgba[i*4+3] = 255;
+      counts[p]++;
+    }
+  }
+  return { w: W, h: H, rgba, palette: palHex, palRGB, counts };
+}
+
+function spriteZoom(data, maxDisp = 512) {
+  return Math.max(1, Math.floor(maxDisp / Math.max(data.w, data.h)));
+}
+
+function drawSpriteChecker(ctx, w, h, sq) {
+  for (let y = 0; y < h; y += sq) {
+    for (let x = 0; x < w; x += sq) {
+      ctx.fillStyle = ((x / sq + y / sq) & 1) ? '#D4CCBA' : '#EAE3D2';
+      ctx.fillRect(x, y, sq, sq);
+    }
+  }
+}
+
+function drawSprite(ctx, data, maxDisp = 512) {
+  const zoom = spriteZoom(data, maxDisp);
+  const dw = data.w * zoom, dh = data.h * zoom;
+  ctx.canvas.width = dw;
+  ctx.canvas.height = dh;
+  drawSpriteChecker(ctx, dw, dh, Math.max(6, zoom));
+  const back = document.createElement('canvas');
+  back.width = data.w; back.height = data.h;
+  const bctx = back.getContext('2d');
+  const id = bctx.createImageData(data.w, data.h);
+  id.data.set(data.rgba);
+  bctx.putImageData(id, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(back, 0, 0, dw, dh);
 }
 
 /* =========================================================
@@ -6717,6 +6975,10 @@ function computeValueMap() {
     state.pxData = runPixelArt();
     state.cellStripes = null;
     state.cellLens = null;
+  } else if (state.mode === 'sprite') {
+    state.sprData = runSprite();
+    state.cellStripes = null;
+    state.cellLens = null;
   } else if (state.mode === 'glitch') {
     state.gltData = runGlitch();
     state.cellStripes = null;
@@ -6920,6 +7182,20 @@ function renderMosaic() {
     $('#mosaic-title').textContent = 'Pixel art preview';
     $('#gray-legend').style.display = 'none';
     $('#mosaic-palette-legend').style.display = 'none';
+    return;
+  }
+  if (state.mode === 'sprite') {
+    if (!state.sprData) return;
+    drawSprite(canvas.getContext('2d'), state.sprData);
+    const used = state.sprData.counts.filter(n => n > 0).length;
+    $('#gray-meta').textContent = `${state.sprData.w}×${state.sprData.h} px · ${used} colors`;
+    $('#mosaic-title').textContent = 'Sprite preview';
+    $('#gray-legend').style.display = 'none';
+    const legend = $('#mosaic-palette-legend');
+    legend.style.display = 'flex';
+    legend.innerHTML = state.sprData.palette.map((hex, i) =>
+      `<span class="item"><span class="sq" style="background:${hex}"></span>${state.sprData.counts[i] || 0}</span>`
+    ).join('');
     return;
   }
   if (state.mode === 'glitch') {
@@ -7369,6 +7645,19 @@ function renderNumberGrid() {
     }
     return;
   }
+  if (state.mode === 'sprite') {
+    if (!state.sprData) return;
+    drawSprite(canvas.getContext('2d'), state.sprData, 700);
+    const used = state.sprData.counts.filter(n => n > 0).length;
+    $('#num-meta').textContent = `${state.sprData.w}×${state.sprData.h} px · ${used} colors`;
+    $('#num-hint').textContent = 'Sprite PNG exports at true 1:1 size. Sprite ×8 PNG exports a scaled-up copy.';
+    const legend = $('#num-palette-legend');
+    legend.style.display = 'flex';
+    legend.innerHTML = state.sprData.palette.map((hex, i) =>
+      `<span class="item"><span class="sq" style="background:${hex}"></span>${i + 1}: ${state.sprData.counts[i] || 0}</span>`
+    ).join('');
+    return;
+  }
   if (state.mode === 'glitch') {
     if (!state.gltData) return;
     drawGlitch(canvas.getContext('2d'), state.gltData);
@@ -7555,6 +7844,8 @@ function generate() {
                                             ? 'Tile SVG'
                                             : state.mode === 'pixel'
                                               ? 'Pixel PNG'
+                                              : state.mode === 'sprite'
+                                                ? 'Sprite PNG (1:1)'
                                               : state.mode === 'glitch'
                                                 ? 'Glitch PNG'
                                                 : state.mode === 'tri'
@@ -7566,6 +7857,7 @@ function generate() {
                                                       : state.mode === 'layers'
                                                         ? 'Layers preview PNG'
                                                         : 'Grayscale PNG';
+  $('#export-num').textContent = state.mode === 'sprite' ? 'Sprite ×8 PNG' : 'Number grid PNG';
 }
 
 let autoTimer = null;
@@ -7646,6 +7938,7 @@ $$('#mode button').forEach(btn => {
     $('#mode-voronoi').style.display = state.mode === 'voronoi' ? '' : 'none';
     $('#mode-tile').style.display = state.mode === 'tile' ? '' : 'none';
     $('#mode-pixel').style.display = state.mode === 'pixel' ? '' : 'none';
+    $('#mode-sprite').style.display = state.mode === 'sprite' ? '' : 'none';
     $('#mode-glitch').style.display = state.mode === 'glitch' ? '' : 'none';
     $('#mode-tri').style.display = state.mode === 'tri' ? '' : 'none';
     $('#mode-riso').style.display = state.mode === 'riso' ? '' : 'none';
@@ -8780,6 +9073,73 @@ $('#pxShowGrid').addEventListener('change', e => {
   autoGenerateDebounced();
 });
 
+/* Sprite wiring */
+$('#sprSize').addEventListener('input', e => {
+  state.sprSize = clamp(parseInt(e.target.value, 10) || 32, 8, 256);
+  autoGenerateDebounced();
+});
+$$('#spr-palmode button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('#spr-palmode button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    state.sprPaletteMode = btn.dataset.pm;
+    $('#spr-console-config').style.display = state.sprPaletteMode === 'console' ? '' : 'none';
+    $('#spr-auto-config').style.display = state.sprPaletteMode === 'auto' ? '' : 'none';
+    $('#spr-custom-config').style.display = state.sprPaletteMode === 'custom' ? '' : 'none';
+    autoGenerateDebounced();
+  });
+});
+$('#sprConsole').addEventListener('change', e => {
+  state.sprConsole = e.target.value;
+  autoGenerateDebounced();
+});
+$$('#spr-colors button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('#spr-colors button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    state.sprColors = parseInt(btn.dataset.n, 10);
+    autoGenerateDebounced();
+  });
+});
+$$('#spr-dither button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('#spr-dither button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    state.sprDither = btn.dataset.d;
+    autoGenerateDebounced();
+  });
+});
+$('#sprTransparent').addEventListener('change', e => {
+  state.sprTransparent = e.target.checked;
+  $('#spr-bgtol').style.display = state.sprTransparent ? '' : 'none';
+  autoGenerateDebounced();
+});
+$('#sprBgTol').addEventListener('input', e => {
+  state.sprBgTol = clamp(parseInt(e.target.value, 10) || 14, 2, 40);
+  $('#sprBgTolVal').textContent = state.sprBgTol;
+  autoGenerateDebounced();
+});
+$('#sprOutline').addEventListener('change', e => {
+  state.sprOutline = e.target.checked;
+  $('#spr-outline-color').style.display = state.sprOutline ? '' : 'none';
+  autoGenerateDebounced();
+});
+$('#sprOutlinePicker').addEventListener('input', e => {
+  state.sprOutlineColor = e.target.value;
+  $('#sprOutlineHex').value = e.target.value.toUpperCase();
+  e.target.parentElement.style.background = e.target.value;
+  autoGenerateDebounced();
+});
+$('#sprOutlineHex').addEventListener('input', e => {
+  const v = e.target.value.trim();
+  if (!/^#?[0-9a-fA-F]{6}$/.test(v)) return;
+  const norm = v.startsWith('#') ? v : '#' + v;
+  state.sprOutlineColor = norm;
+  $('#sprOutlinePicker').value = norm;
+  $('#sprOutlinePicker').parentElement.style.background = norm;
+  autoGenerateDebounced();
+});
+
 /* Glitch wiring */
 $('#gltWidth').addEventListener('input', e => {
   state.gltWidth = clamp(parseInt(e.target.value, 10) || 400, 80, 900);
@@ -9359,6 +9719,17 @@ $('#export-gray').addEventListener('click', async () => {
     cv.getContext('2d').putImageData(id, 0, 0);
     downloadCanvas(cv, `value-map-pixel_${state.pxData.w}x${state.pxData.h}_${state.pxSize}px.png`);
     return;
+  } else if (state.mode === 'sprite') {
+    if (!state.sprData) return;
+    // True 1:1 sprite PNG — the actual game asset, with transparency.
+    const d = state.sprData;
+    const cv = document.createElement('canvas');
+    cv.width = d.w; cv.height = d.h;
+    const id = cv.getContext('2d').createImageData(d.w, d.h);
+    id.data.set(d.rgba);
+    cv.getContext('2d').putImageData(id, 0, 0);
+    downloadCanvas(cv, `sprite_${d.w}x${d.h}_${state.sprPaletteMode === 'console' ? state.sprConsole : state.sprPaletteMode}.png`);
+    return;
   } else if (state.mode === 'glitch') {
     if (!state.gltData) return;
     const cv = document.createElement('canvas');
@@ -9610,6 +9981,24 @@ $('#export-num').addEventListener('click', () => {
     downloadCanvas(canvas, `value-map-region-numbers_${exW}x${exH}_${state.regionLevels}v.png`);
     return;
   }
+  if (state.mode === 'sprite') {
+    // Scaled-up sprite (8x, nearest-neighbour) — for sharing / store pages.
+    if (!state.sprData) return;
+    const d = state.sprData;
+    const scale = 8;
+    const back = document.createElement('canvas');
+    back.width = d.w; back.height = d.h;
+    const bid = back.getContext('2d').createImageData(d.w, d.h);
+    bid.data.set(d.rgba);
+    back.getContext('2d').putImageData(bid, 0, 0);
+    const cv = document.createElement('canvas');
+    cv.width = d.w * scale; cv.height = d.h * scale;
+    const cx = cv.getContext('2d');
+    cx.imageSmoothingEnabled = false;
+    cx.drawImage(back, 0, 0, cv.width, cv.height);
+    downloadCanvas(cv, `sprite_${d.w}x${d.h}_x${scale}.png`);
+    return;
+  }
   const { cols, rows, values } = state;
   if (!values) return;
   const cellSize = 60;
@@ -9696,6 +10085,26 @@ function downloadText(text, filename, mime = 'text/plain') {
 }
 
 $('#export-csv').addEventListener('click', () => {
+  // Sprite → per-pixel palette-index grid (for tile editors / game pipelines)
+  if (state.mode === 'sprite' && state.sprData) {
+    const d = state.sprData;
+    const lines = [];
+    lines.push('# Value Map sprite — palette index per pixel (-1 = transparent)');
+    lines.push('# palette: ' + d.palette.map((hx, i) => `${i}=${hx}`).join(' '));
+    for (let y = 0; y < d.h; y++) {
+      const row = [];
+      for (let x = 0; x < d.w; x++) {
+        const a = d.rgba[(y * d.w + x) * 4 + 3];
+        if (a === 0) { row.push(-1); continue; }
+        const r = d.rgba[(y*d.w+x)*4], g = d.rgba[(y*d.w+x)*4+1], b = d.rgba[(y*d.w+x)*4+2];
+        let pi = d.palRGB.findIndex(c => c[0] === r && c[1] === g && c[2] === b);
+        row.push(pi); // -1 here means outline pixel (not in palette)
+      }
+      lines.push(row.join(','));
+    }
+    downloadText(lines.join('\n'), `sprite_${d.w}x${d.h}.csv`, 'text/csv');
+    return;
+  }
   // Pixel art with palette → cross-stitch chart CSV
   if (state.mode === 'pixel' && state.pxStyle === 'palette' && state.pxData && state.pxData.paletteIdx) {
     const { w, h, paletteIdx } = state.pxData;
