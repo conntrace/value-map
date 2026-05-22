@@ -835,6 +835,17 @@
           <label class="field">Sprite size (px)</label>
           <input type="number" id="sprSize" min="8" max="256" value="32" />
           <div class="hint" style="margin-bottom: 10px;">Longest edge of the sprite in real pixels. Common: 16, 32, 48, 64. The other edge follows the crop's aspect.</div>
+          <label class="field">Contrast</label>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
+            <input type="range" id="sprContrast" min="50" max="220" value="112" style="width:120px;" />
+            <span id="sprContrastVal">1.12</span>
+          </div>
+          <label class="field">Saturation</label>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
+            <input type="range" id="sprSaturation" min="0" max="240" value="125" style="width:120px;" />
+            <span id="sprSaturationVal">1.25</span>
+          </div>
+          <div class="hint" style="margin-bottom: 10px;">Photos are tonally flat — a contrast/saturation lift before quantizing gives the sprite punch. Set both to 1.00 for neutral.</div>
           <label class="field">Palette source</label>
           <div class="toggle" id="spr-palmode" style="margin-bottom: 12px;">
             <button data-pm="console" class="on">Console</button>
@@ -865,6 +876,13 @@
           <div id="spr-custom-config" style="display:none; margin-bottom: 12px;">
             <div class="hint">Uses your palette from Palette mode (edit it there).</div>
           </div>
+          <label class="field">Color matching</label>
+          <div class="toggle" id="spr-match" style="margin-bottom: 8px;">
+            <button data-m="auto" class="on">Auto</button>
+            <button data-m="color">By color</button>
+            <button data-m="brightness">By brightness</button>
+          </div>
+          <div class="hint" style="margin-bottom: 12px;">How source pixels map onto the palette. <strong>By color</strong> = nearest hue+tone (full-color palettes like PICO-8). <strong>By brightness</strong> = tonal ramp (Game Boy, 1-bit). <strong>Auto</strong> picks based on the palette.</div>
           <label class="field">Dithering</label>
           <div class="toggle" id="spr-dither" style="margin-bottom: 12px;">
             <button data-d="none" class="on">None</button>
@@ -1990,9 +2008,12 @@ const state = {
 
   // Sprite — game-asset pixel art
   sprSize: 32,            // longest edge in real pixels
+  sprContrast: 1.12,      // pre-quantize contrast multiplier
+  sprSaturation: 1.25,    // pre-quantize saturation multiplier
   sprPaletteMode: 'console',  // 'console' | 'auto' | 'custom'
   sprConsole: 'pico8',
   sprColors: 8,           // for auto-extract
+  sprMatch: 'auto',       // 'auto' | 'color' | 'brightness'
   sprDither: 'none',      // 'none' | 'bayer' | 'fs'
   sprTransparent: false,
   sprBgTol: 14,
@@ -2441,6 +2462,87 @@ const SPRITE_PALETTES = {
             '#F8B8B8', '#F85898', '#E40058', '#A80020'],
 };
 
+/* k-means in OKLab over an already-adjusted RGB float buffer, skipping
+   transparent pixels. Returns hex colors sorted light->dark. */
+function kmeansSpritePalette(adj, N, idx, K, iters = 14) {
+  const L = [], A = [], B = [];
+  for (let i = 0; i < N; i++) {
+    if (idx[i] === -1) continue;
+    const lab = rgbToOklab(adj[i*3], adj[i*3+1], adj[i*3+2]);
+    L.push(lab[0]); A.push(lab[1]); B.push(lab[2]);
+  }
+  const M = L.length;
+  if (M === 0) return ['#000000'];
+  K = Math.min(K, M);
+  const cL = new Float32Array(K), cA = new Float32Array(K), cB = new Float32Array(K);
+  let s0 = (Math.random() * M) | 0;
+  cL[0] = L[s0]; cA[0] = A[s0]; cB[0] = B[s0];
+  const d2 = new Float32Array(M);
+  for (let k = 1; k < K; k++) {
+    let total = 0;
+    for (let i = 0; i < M; i++) {
+      let best = Infinity;
+      for (let j = 0; j < k; j++) {
+        const dl = L[i]-cL[j], da = A[i]-cA[j], db = B[i]-cB[j];
+        const d = dl*dl + da*da + db*db;
+        if (d < best) best = d;
+      }
+      d2[i] = best; total += best;
+    }
+    let r = Math.random() * total, pick = M - 1;
+    for (let i = 0; i < M; i++) { r -= d2[i]; if (r <= 0) { pick = i; break; } }
+    cL[k] = L[pick]; cA[k] = A[pick]; cB[k] = B[pick];
+  }
+  const assign = new Int32Array(M);
+  for (let it = 0; it < iters; it++) {
+    for (let i = 0; i < M; i++) {
+      let best = 0, bd = Infinity;
+      for (let j = 0; j < K; j++) {
+        const dl = L[i]-cL[j], da = A[i]-cA[j], db = B[i]-cB[j];
+        const d = dl*dl + da*da + db*db;
+        if (d < bd) { bd = d; best = j; }
+      }
+      assign[i] = best;
+    }
+    const sL = new Float64Array(K), sA = new Float64Array(K),
+          sB = new Float64Array(K), cnt = new Int32Array(K);
+    for (let i = 0; i < M; i++) {
+      const j = assign[i]; sL[j]+=L[i]; sA[j]+=A[i]; sB[j]+=B[i]; cnt[j]++;
+    }
+    for (let j = 0; j < K; j++) if (cnt[j]) {
+      cL[j]=sL[j]/cnt[j]; cA[j]=sA[j]/cnt[j]; cB[j]=sB[j]/cnt[j];
+    }
+  }
+  const out = [];
+  for (let j = 0; j < K; j++) {
+    const [r, g, b] = oklabToRgb(cL[j], cA[j], cB[j]);
+    out.push({ hex: rgbToHex(r, g, b), L: cL[j] });
+  }
+  out.sort((x, y) => x.L - y.L);
+  return out.map(o => o.hex);
+}
+
+/* A palette is "tonal" (best matched by brightness, not hue) when it is
+   essentially a single-hue ramp or near-grayscale. */
+function paletteIsTonal(palRGB) {
+  const labs = palRGB.map(([r, g, b]) => rgbToOklab(r, g, b));
+  let meanChroma = 0;
+  const hues = [];
+  for (const [, a, b] of labs) {
+    const ch = Math.hypot(a, b);
+    meanChroma += ch;
+    if (ch > 0.02) hues.push(Math.atan2(b, a));
+  }
+  meanChroma /= labs.length || 1;
+  if (meanChroma < 0.035) return true;        // basically grayscale
+  if (hues.length < 2) return true;
+  hues.sort((x, y) => x - y);
+  let maxGap = (hues[0] + 2 * Math.PI) - hues[hues.length - 1];
+  for (let i = 1; i < hues.length; i++) maxGap = Math.max(maxGap, hues[i] - hues[i-1]);
+  const spread = 2 * Math.PI - maxGap;
+  return spread < 1.2;                        // hues span < ~70deg -> single-hue ramp
+}
+
 function runSprite() {
   if (!state.img || !state.crop) return null;
   const c = state.crop;
@@ -2453,78 +2555,146 @@ function runSprite() {
   const src = sampleCropToBuffer(W, H);   // box-averaged downscale, RGBA
   const N = W * H;
 
-  // ---- 1. Background mask (optional transparency) --------------------
+  // ---- 1. Pre-adjust: contrast + saturation lift ---------------------
+  // Photos are tonally flat; a punch-up before quantizing makes a much
+  // crisper sprite. The adjusted RGB float buffer drives everything below.
+  const adj = new Float32Array(N * 3);
+  const contrast = state.sprContrast;
+  const sat = state.sprSaturation;
+  for (let i = 0; i < N; i++) {
+    let r = src[i*4], g = src[i*4+1], b = src[i*4+2];
+    if (contrast !== 1) {
+      r = (r - 128) * contrast + 128;
+      g = (g - 128) * contrast + 128;
+      b = (b - 128) * contrast + 128;
+    }
+    if (sat !== 1) {
+      const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+      r = lum + (r - lum) * sat;
+      g = lum + (g - lum) * sat;
+      b = lum + (b - lum) * sat;
+    }
+    adj[i*3]   = clamp(r, 0, 255);
+    adj[i*3+1] = clamp(g, 0, 255);
+    adj[i*3+2] = clamp(b, 0, 255);
+  }
+
+  // ---- 2. Background mask (optional transparency) --------------------
   const TRANS = -1, OUTLINE = -2;
   const idx = new Int16Array(N);
   if (state.sprTransparent) {
-    // Average the four corners as the background color.
     const corners = [0, W - 1, (H - 1) * W, (H - 1) * W + (W - 1)];
     let br = 0, bgc = 0, bb = 0;
     for (const ci of corners) {
-      br += src[ci * 4]; bgc += src[ci * 4 + 1]; bb += src[ci * 4 + 2];
+      br += adj[ci*3]; bgc += adj[ci*3+1]; bb += adj[ci*3+2];
     }
     br /= 4; bgc /= 4; bb /= 4;
     const tol = state.sprBgTol;
-    const tol2 = tol * tol * 9;   // squared distance threshold
+    const tol2 = tol * tol * 9;
     for (let i = 0; i < N; i++) {
-      const dr = src[i*4] - br, dg = src[i*4+1] - bgc, db = src[i*4+2] - bb;
+      const dr = adj[i*3] - br, dg = adj[i*3+1] - bgc, db = adj[i*3+2] - bb;
       idx[i] = (dr*dr + dg*dg + db*db) < tol2 ? TRANS : 0;
     }
   }
 
-  // ---- 2. Build the working palette ----------------------------------
+  // ---- 3. Build the working palette ----------------------------------
   let palHex;
   if (state.sprPaletteMode === 'console') {
     palHex = (SPRITE_PALETTES[state.sprConsole] || SPRITE_PALETTES.pico8).slice();
   } else if (state.sprPaletteMode === 'auto') {
-    palHex = extractPaletteKMeans(clamp(state.sprColors | 0, 2, 32)) || state.palette.slice();
+    palHex = kmeansSpritePalette(adj, N, idx, clamp(state.sprColors | 0, 2, 32));
   } else {
     palHex = state.palette.slice();
   }
   const palRGB = palHex.map(hexToRgb);
   const palLab = palRGB.map(([r, g, b]) => rgbToOklab(r, g, b));
+  const palLum = palRGB.map(([r, g, b]) => 0.2126*r + 0.7152*g + 0.0722*b);
+  // Palette order sorted by luminance — used by brightness matching.
+  const lumOrder = palRGB.map((_, i) => i).sort((a, b) => palLum[a] - palLum[b]);
+  const Lp = lumOrder.length;
 
-  // ---- 3. Quantize to the palette, with optional dithering -----------
-  const nearest = (r, g, b) => nearestPaletteColor(
-    clamp(r,0,255), clamp(g,0,255), clamp(b,0,255), palLab, palRGB);
+  // Resolve the match mode (Auto -> brightness for tonal palettes).
+  const matchBright = state.sprMatch === 'brightness'
+    || (state.sprMatch === 'auto' && paletteIsTonal(palRGB));
 
-  if (state.sprDither === 'fs') {
-    // Floyd-Steinberg error diffusion in a working RGB float buffer.
-    const buf = new Float32Array(N * 3);
-    for (let i = 0; i < N; i++) {
-      buf[i*3] = src[i*4]; buf[i*3+1] = src[i*4+1]; buf[i*3+2] = src[i*4+2];
+  // pick() returns a palette index for a given (adjusted) RGB triple.
+  function pick(r, g, b) {
+    if (matchBright) {
+      const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+      const rank = clamp(Math.round(lum / 255 * (Lp - 1)), 0, Lp - 1);
+      return lumOrder[rank];
     }
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const i = y * W + x, k = i * 3;
-        if (idx[i] === TRANS) continue;
-        const pi = nearest(buf[k], buf[k+1], buf[k+2]);
-        idx[i] = pi;
-        const er = buf[k]   - palRGB[pi][0];
-        const eg = buf[k+1] - palRGB[pi][1];
-        const eb = buf[k+2] - palRGB[pi][2];
-        const push = (di, w) => {
-          if (di < 0 || di >= N || idx[di] === TRANS) return;
-          buf[di*3] += er*w; buf[di*3+1] += eg*w; buf[di*3+2] += eb*w;
-        };
-        if (x + 1 < W)            push(i+1,     7/16);
-        if (y + 1 < H && x > 0)   push(i+W-1,   3/16);
-        if (y + 1 < H)            push(i+W,     5/16);
-        if (y + 1 < H && x+1 < W) push(i+W+1,   1/16);
+    return nearestPaletteColor(
+      clamp(r,0,255), clamp(g,0,255), clamp(b,0,255), palLab, palRGB);
+  }
+
+  // ---- 4. Quantize to the palette, with optional dithering -----------
+  if (state.sprDither === 'fs') {
+    if (matchBright) {
+      // 1-D luminance error diffusion along the tonal ramp.
+      const lbuf = new Float32Array(N);
+      for (let i = 0; i < N; i++) {
+        lbuf[i] = 0.2126*adj[i*3] + 0.7152*adj[i*3+1] + 0.0722*adj[i*3+2];
+      }
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const i = y * W + x;
+          if (idx[i] === TRANS) continue;
+          const lum = lbuf[i];
+          const rank = clamp(Math.round(lum / 255 * (Lp - 1)), 0, Lp - 1);
+          const pi = lumOrder[rank];
+          idx[i] = pi;
+          const err = lum - palLum[pi];
+          const push = (di, w) => {
+            if (di < 0 || di >= N || idx[di] === TRANS) return;
+            lbuf[di] += err * w;
+          };
+          if (x + 1 < W)            push(i+1,     7/16);
+          if (y + 1 < H && x > 0)   push(i+W-1,   3/16);
+          if (y + 1 < H)            push(i+W,     5/16);
+          if (y + 1 < H && x+1 < W) push(i+W+1,   1/16);
+        }
+      }
+    } else {
+      // RGB error diffusion in colour space.
+      const buf = new Float32Array(N * 3);
+      for (let i = 0; i < N; i++) {
+        buf[i*3] = adj[i*3]; buf[i*3+1] = adj[i*3+1]; buf[i*3+2] = adj[i*3+2];
+      }
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const i = y * W + x, k = i * 3;
+          if (idx[i] === TRANS) continue;
+          const pi = pick(buf[k], buf[k+1], buf[k+2]);
+          idx[i] = pi;
+          const er = buf[k]   - palRGB[pi][0];
+          const eg = buf[k+1] - palRGB[pi][1];
+          const eb = buf[k+2] - palRGB[pi][2];
+          const push = (di, w) => {
+            if (di < 0 || di >= N || idx[di] === TRANS) return;
+            buf[di*3] += er*w; buf[di*3+1] += eg*w; buf[di*3+2] += eb*w;
+          };
+          if (x + 1 < W)            push(i+1,     7/16);
+          if (y + 1 < H && x > 0)   push(i+W-1,   3/16);
+          if (y + 1 < H)            push(i+W,     5/16);
+          if (y + 1 < H && x+1 < W) push(i+W+1,   1/16);
+        }
       }
     }
   } else if (state.sprDither === 'bayer') {
-    const M = BAYER_4, m = 4, norm = 16;
+    const Mx = BAYER_4, m = 4, norm = 16;
     for (let i = 0; i < N; i++) {
       if (idx[i] === TRANS) continue;
       const x = i % W, y = (i / W) | 0;
-      const bias = ((M[y % m][x % m] + 0.5) / norm - 0.5) * 64;
-      idx[i] = nearest(src[i*4] + bias, src[i*4+1] + bias, src[i*4+2] + bias);
+      // Bias added to all channels -> shifts luminance uniformly, so this
+      // works for both colour and brightness matching.
+      const bias = ((Mx[y % m][x % m] + 0.5) / norm - 0.5) * 64;
+      idx[i] = pick(adj[i*3] + bias, adj[i*3+1] + bias, adj[i*3+2] + bias);
     }
   } else {
     for (let i = 0; i < N; i++) {
       if (idx[i] === TRANS) continue;
-      idx[i] = nearest(src[i*4], src[i*4+1], src[i*4+2]);
+      idx[i] = pick(adj[i*3], adj[i*3+1], adj[i*3+2]);
     }
   }
 
@@ -9077,6 +9247,24 @@ $('#pxShowGrid').addEventListener('change', e => {
 $('#sprSize').addEventListener('input', e => {
   state.sprSize = clamp(parseInt(e.target.value, 10) || 32, 8, 256);
   autoGenerateDebounced();
+});
+$('#sprContrast').addEventListener('input', e => {
+  state.sprContrast = clamp((parseInt(e.target.value, 10) || 100) / 100, 0.5, 2.2);
+  $('#sprContrastVal').textContent = state.sprContrast.toFixed(2);
+  autoGenerateDebounced();
+});
+$('#sprSaturation').addEventListener('input', e => {
+  state.sprSaturation = clamp((parseInt(e.target.value, 10) || 100) / 100, 0, 2.4);
+  $('#sprSaturationVal').textContent = state.sprSaturation.toFixed(2);
+  autoGenerateDebounced();
+});
+$$('#spr-match button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('#spr-match button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    state.sprMatch = btn.dataset.m;
+    autoGenerateDebounced();
+  });
 });
 $$('#spr-palmode button').forEach(btn => {
   btn.addEventListener('click', () => {
