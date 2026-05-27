@@ -577,6 +577,7 @@
           <button data-mode="tile">Tile</button>
           <button data-mode="pixel">Pixel</button>
           <button data-mode="sprite">Sprite</button>
+          <button data-mode="pxart">Pixelize</button>
           <button data-mode="glitch">Glitch</button>
           <button data-mode="tri">Triangle</button>
           <button data-mode="riso">Riso</button>
@@ -861,6 +862,8 @@
               <option value="pico8" selected>PICO-8 — 16 color</option>
               <option value="c64">Commodore 64 — 16 color</option>
               <option value="nes">NES — 24 color subset</option>
+              <option value="db16">Dawnbringer 16</option>
+              <option value="sweetie16">Sweetie 16</option>
             </select>
           </div>
           <div id="spr-auto-config" style="display:none; margin-bottom: 12px;">
@@ -924,6 +927,102 @@
             <button id="sprPalPng" class="btn ghost" style="font-size: 11px; flex:1;">.png</button>
           </div>
           <div class="hint">.gpl → Aseprite / GIMP / Krita / Pixelorama. .pal → JASC / Pro Motion / Grafx2. .hex → Lospec. .png → a swatch strip any tool can import a palette from.</div>
+        </div>
+
+        <div id="mode-pxart" style="display: none;">
+          <label class="field">Style</label>
+          <select id="pxartStyle" class="swatch-hex" style="width:100%; cursor:pointer; margin-bottom: 12px;">
+            <option value="gameboy">Game Boy — 4-tone classic</option>
+            <option value="nes">NES — high contrast, hard edges</option>
+            <option value="pico8" selected>PICO-8 — saturated chibi</option>
+            <option value="db16">Dawnbringer 16 — cinematic</option>
+            <option value="sweetie16">Sweetie 16 — modern pastel</option>
+            <option value="c64">Commodore 64</option>
+            <option value="ega">EGA / CGA-era</option>
+            <option value="1bit">1-bit — pure B&amp;W</option>
+            <option value="modern">Modern indie — 24-color extract</option>
+            <option value="custom">Custom</option>
+          </select>
+          <label class="field">Size (px)</label>
+          <input type="number" id="pxartSize" min="16" max="256" value="64" />
+          <div class="hint" style="margin-bottom: 10px;">Longest edge in real pixels. 32 = chibi-style, 64 = standard portrait, 128 = high-detail.</div>
+          <label class="field">Smoothing</label>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
+            <input type="range" id="pxartSmooth" min="0" max="4" value="2" style="width:120px;" />
+            <span id="pxartSmoothVal">2</span>
+          </div>
+          <div class="hint" style="margin-bottom: 10px;">Edge-preserving median filter passes. Removes photo noise/speckle that would otherwise pollute the quantized result. The big "looks like real pixel art" lever.</div>
+          <label class="check-row" style="margin-bottom: 6px;">
+            <input type="checkbox" id="pxartOutlines" checked />
+            <span>Draw edge outlines</span>
+          </label>
+          <div id="pxart-outline-config" style="margin-bottom: 10px;">
+            <div class="row" style="margin-bottom: 6px;">
+              <div>
+                <label class="field">Threshold</label>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <input type="range" id="pxartEdgeThr" min="5" max="80" value="22" style="width:88px;" />
+                  <span id="pxartEdgeThrVal">22</span>
+                </div>
+              </div>
+              <div>
+                <label class="field">Thickness</label>
+                <div class="toggle" id="pxart-thick">
+                  <button data-t="1" class="on">1 px</button>
+                  <button data-t="2">2 px</button>
+                </div>
+              </div>
+            </div>
+            <label class="field">Outline color</label>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <label class="swatch-chip" style="background:#1A1A1A;">
+                <input type="color" id="pxartOutlinePicker" value="#1A1A1A" />
+              </label>
+              <input type="text" class="swatch-hex" id="pxartOutlineHex" value="#1A1A1A" maxlength="7" />
+            </div>
+            <div class="hint">Outlines are drawn where the quantized regions meet — like hand-inked pixel art.</div>
+          </div>
+          <label class="field">Color matching</label>
+          <div class="toggle" id="pxart-match" style="margin-bottom: 10px;">
+            <button data-m="auto" class="on">Auto</button>
+            <button data-m="color">By color</button>
+            <button data-m="brightness">By brightness</button>
+          </div>
+          <label class="field">Dithering</label>
+          <div class="toggle" id="pxart-dither" style="margin-bottom: 10px;">
+            <button data-d="none" class="on">None</button>
+            <button data-d="bayer">Ordered</button>
+            <button data-d="fs">Diffusion</button>
+          </div>
+          <label class="field">Contrast</label>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 8px;">
+            <input type="range" id="pxartContrast" min="50" max="220" value="115" style="width:120px;" />
+            <span id="pxartContrastVal">1.15</span>
+          </div>
+          <label class="field">Saturation</label>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
+            <input type="range" id="pxartSaturation" min="0" max="240" value="130" style="width:120px;" />
+            <span id="pxartSaturationVal">1.30</span>
+          </div>
+          <label class="check-row" style="margin-bottom: 8px;">
+            <input type="checkbox" id="pxartTransparent" />
+            <span>Transparent background</span>
+          </label>
+          <div id="pxart-bgtol" style="display:none; margin-bottom: 10px;">
+            <label class="field">BG tolerance</label>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <input type="range" id="pxartBgTol" min="2" max="40" value="14" style="width:120px;" />
+              <span id="pxartBgTolVal">14</span>
+            </div>
+          </div>
+          <label class="field" style="margin-top: 4px;">Palette file (for your pixel-art tool)</label>
+          <div style="display:flex; gap:6px; margin-bottom: 6px;">
+            <button id="pxartPalGpl" class="btn ghost" style="font-size: 11px; flex:1;">.gpl</button>
+            <button id="pxartPalPal" class="btn ghost" style="font-size: 11px; flex:1;">.pal</button>
+            <button id="pxartPalHex" class="btn ghost" style="font-size: 11px; flex:1;">.hex</button>
+            <button id="pxartPalPng" class="btn ghost" style="font-size: 11px; flex:1;">.png</button>
+          </div>
+          <div class="hint">Same palette-file exports as Sprite — drop into Aseprite / GIMP / Pixelorama to keep painting on-palette.</div>
         </div>
 
         <div id="mode-glitch" style="display: none;">
@@ -2029,6 +2128,22 @@ const state = {
   sprOutlineColor: '#1A1A1A',
   sprData: null,          // { w, h, rgba, palette, counts }
 
+  // Pixelize — full pixel-art transformation (smoothing + edges + style)
+  pxartStyle: 'pico8',
+  pxartSize: 64,
+  pxartSmooth: 2,
+  pxartContrast: 1.15,
+  pxartSaturation: 1.30,
+  pxartMatch: 'auto',
+  pxartDither: 'none',
+  pxartOutlines: true,
+  pxartEdgeThr: 22,        // OKLab-distance threshold × 100
+  pxartThickness: 1,       // 1 or 2 px
+  pxartOutlineColor: '#1A1A1A',
+  pxartTransparent: false,
+  pxartBgTol: 14,
+  pxartData: null,
+
   // Glitch — RGB channel shift
   gltWidth: 400,
   gltRX: 4, gltRY: 0,
@@ -2468,6 +2583,13 @@ const SPRITE_PALETTES = {
             '#F8B8F8', '#9878F8', '#6844FC', '#4428BC',
             '#F8A4C0', '#F878F8', '#D800CC', '#940084',
             '#F8B8B8', '#F85898', '#E40058', '#A80020'],
+  // Famous Lospec community palettes
+  db16:    ['#140C1C', '#442434', '#30346D', '#4E4A4E', '#854C30', '#346524',
+            '#D04648', '#757161', '#597DCE', '#D27D2C', '#8595A1', '#6DAA2C',
+            '#D2AA99', '#6DC2CA', '#DAD45E', '#DEEED6'],
+  sweetie16:['#1A1C2C', '#5D275D', '#B13E53', '#EF7D57', '#FFCD75', '#A7F070',
+            '#38B764', '#257179', '#29366F', '#3B5DC9', '#41A6F6', '#73EFF7',
+            '#F4F4F4', '#94B0C2', '#566C86', '#333C57'],
 };
 
 /* k-means in OKLab over an already-adjusted RGB float buffer, skipping
@@ -2769,6 +2891,297 @@ function drawSprite(ctx, data, maxDisp = 512) {
   bctx.putImageData(id, 0, 0);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(back, 0, 0, dw, dh);
+}
+
+/* =========================================================
+   Pixelize — full pixel-art transformation pipeline.
+
+   Distinct from "Pixel" (mechanical pixelate) and "Sprite" (exact
+   asset). This is the "convert a photo into hand-drawn pixel art"
+   mode: edge-preserving smoothing → palette quantization →
+   palette-aware edge outlines that follow the posterized regions.
+
+   Style presets bundle every knob into a known-good combination
+   so the user picks one and the rest is dialed in.
+========================================================= */
+const PXART_STYLES = {
+  gameboy:   { paletteSource:'console:gameboy',   match:'brightness', dither:'fs',
+               smooth:2, contrast:1.18, saturation:1.0,  outlines:true,  edgeThr:18, thickness:1, outlineColor:'#0F380F' },
+  nes:       { paletteSource:'console:nes',       match:'color',      dither:'bayer',
+               smooth:1, contrast:1.22, saturation:1.35, outlines:true,  edgeThr:30, thickness:1, outlineColor:'#000000' },
+  pico8:     { paletteSource:'console:pico8',     match:'color',      dither:'none',
+               smooth:2, contrast:1.15, saturation:1.45, outlines:true,  edgeThr:22, thickness:1, outlineColor:'#000000' },
+  db16:      { paletteSource:'console:db16',      match:'color',      dither:'none',
+               smooth:2, contrast:1.10, saturation:1.20, outlines:true,  edgeThr:20, thickness:1, outlineColor:'#140C1C' },
+  sweetie16: { paletteSource:'console:sweetie16', match:'color',      dither:'none',
+               smooth:2, contrast:1.08, saturation:1.25, outlines:true,  edgeThr:18, thickness:1, outlineColor:'#1A1C2C' },
+  c64:       { paletteSource:'console:c64',       match:'color',      dither:'bayer',
+               smooth:1, contrast:1.20, saturation:1.30, outlines:false, edgeThr:25, thickness:1, outlineColor:'#000000' },
+  ega:       { paletteSource:'console:cga',       match:'color',      dither:'bayer',
+               smooth:1, contrast:1.25, saturation:1.40, outlines:true,  edgeThr:30, thickness:1, outlineColor:'#000000' },
+  '1bit':    { paletteSource:'console:1bit',      match:'brightness', dither:'fs',
+               smooth:2, contrast:1.30, saturation:1.0,  outlines:false, edgeThr:50, thickness:1, outlineColor:'#000000' },
+  modern:    { paletteSource:'auto:24',           match:'color',      dither:'none',
+               smooth:3, contrast:1.08, saturation:1.15, outlines:true,  edgeThr:18, thickness:1, outlineColor:'#1A1A1A' },
+};
+
+/* Edge-preserving 3x3 median filter — per-channel median of the 9-pixel
+   neighborhood. Run iteratively for stronger smoothing without blurring
+   silhouette edges (this is what makes the difference between "photo at
+   low res" and "looks like hand-drawn pixel art"). */
+function medianFilter3x3(buf, W, H) {
+  const out = new Uint8ClampedArray(buf.length);
+  const w = new Uint8Array(9);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      for (let c = 0; c < 3; c++) {
+        let n = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = clamp(x + dx, 0, W - 1);
+            const ny = clamp(y + dy, 0, H - 1);
+            w[n++] = buf[(ny * W + nx) * 4 + c];
+          }
+        }
+        // Tiny insertion sort on 9 elements — faster than Array.sort
+        for (let i = 1; i < 9; i++) {
+          const v = w[i]; let j = i;
+          while (j > 0 && w[j-1] > v) { w[j] = w[j-1]; j--; }
+          w[j] = v;
+        }
+        out[(y * W + x) * 4 + c] = w[4];
+      }
+      out[(y * W + x) * 4 + 3] = buf[(y * W + x) * 4 + 3];
+    }
+  }
+  return out;
+}
+
+function runPixelize() {
+  if (!state.img || !state.crop) return null;
+  const c = state.crop;
+  const longEdge = clamp(state.pxartSize | 0, 16, 256);
+  const ar = c.w / c.h;
+  let W, H;
+  if (ar >= 1) { W = longEdge; H = Math.max(1, Math.round(longEdge / ar)); }
+  else { H = longEdge; W = Math.max(1, Math.round(longEdge * ar)); }
+  let src = sampleCropToBuffer(W, H);
+  const N = W * H;
+
+  // ---- 1. Edge-preserving smoothing (median filter, N passes) --------
+  const passes = clamp(state.pxartSmooth | 0, 0, 4);
+  for (let p = 0; p < passes; p++) src = medianFilter3x3(src, W, H);
+
+  // ---- 2. Contrast + saturation lift ---------------------------------
+  const adj = new Float32Array(N * 3);
+  const contrast = state.pxartContrast;
+  const sat = state.pxartSaturation;
+  for (let i = 0; i < N; i++) {
+    let r = src[i*4], g = src[i*4+1], b = src[i*4+2];
+    if (contrast !== 1) {
+      r = (r - 128) * contrast + 128;
+      g = (g - 128) * contrast + 128;
+      b = (b - 128) * contrast + 128;
+    }
+    if (sat !== 1) {
+      const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+      r = lum + (r - lum) * sat;
+      g = lum + (g - lum) * sat;
+      b = lum + (b - lum) * sat;
+    }
+    adj[i*3]   = clamp(r, 0, 255);
+    adj[i*3+1] = clamp(g, 0, 255);
+    adj[i*3+2] = clamp(b, 0, 255);
+  }
+
+  // ---- 3. Background mask --------------------------------------------
+  const TRANS = -1;
+  const idx = new Int16Array(N);
+  if (state.pxartTransparent) {
+    const corners = [0, W - 1, (H - 1) * W, (H - 1) * W + (W - 1)];
+    let br=0,bgc=0,bb=0;
+    for (const ci of corners) { br += adj[ci*3]; bgc += adj[ci*3+1]; bb += adj[ci*3+2]; }
+    br /= 4; bgc /= 4; bb /= 4;
+    const tol = state.pxartBgTol, tol2 = tol * tol * 9;
+    for (let i = 0; i < N; i++) {
+      const dr = adj[i*3] - br, dg = adj[i*3+1] - bgc, db = adj[i*3+2] - bb;
+      idx[i] = (dr*dr + dg*dg + db*db) < tol2 ? TRANS : 0;
+    }
+  }
+
+  // ---- 4. Resolve palette from style ---------------------------------
+  const style = PXART_STYLES[state.pxartStyle];
+  let palHex;
+  if (!style || state.pxartStyle === 'custom') {
+    palHex = state.palette.slice();
+  } else {
+    const src = style.paletteSource;
+    if (src.startsWith('console:')) {
+      palHex = (SPRITE_PALETTES[src.slice(8)] || SPRITE_PALETTES.pico8).slice();
+    } else if (src.startsWith('auto:')) {
+      const K = parseInt(src.slice(5), 10) || 16;
+      palHex = kmeansSpritePalette(adj, N, idx, K);
+    } else {
+      palHex = state.palette.slice();
+    }
+  }
+  const palRGB = palHex.map(hexToRgb);
+  const palLab = palRGB.map(([r, g, b]) => rgbToOklab(r, g, b));
+  const palLum = palRGB.map(([r, g, b]) => 0.2126*r + 0.7152*g + 0.0722*b);
+  const lumOrder = palRGB.map((_, i) => i).sort((a, b) => palLum[a] - palLum[b]);
+  const Lp = lumOrder.length;
+
+  const matchBright = state.pxartMatch === 'brightness'
+    || (state.pxartMatch === 'auto' && paletteIsTonal(palRGB));
+
+  function pick(r, g, b) {
+    if (matchBright) {
+      const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+      const rank = clamp(Math.round(lum / 255 * (Lp - 1)), 0, Lp - 1);
+      return lumOrder[rank];
+    }
+    return nearestPaletteColor(
+      clamp(r,0,255), clamp(g,0,255), clamp(b,0,255), palLab, palRGB);
+  }
+
+  // ---- 5. Quantize with optional dither -------------------------------
+  // (identical shape to runSprite — kept inline for clarity)
+  if (state.pxartDither === 'fs') {
+    if (matchBright) {
+      const lbuf = new Float32Array(N);
+      for (let i = 0; i < N; i++) lbuf[i] = 0.2126*adj[i*3] + 0.7152*adj[i*3+1] + 0.0722*adj[i*3+2];
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const i = y * W + x;
+          if (idx[i] === TRANS) continue;
+          const lum = lbuf[i];
+          const rank = clamp(Math.round(lum / 255 * (Lp - 1)), 0, Lp - 1);
+          const pi = lumOrder[rank];
+          idx[i] = pi;
+          const err = lum - palLum[pi];
+          const push = (di, w) => {
+            if (di < 0 || di >= N || idx[di] === TRANS) return;
+            lbuf[di] += err * w;
+          };
+          if (x + 1 < W)            push(i+1,     7/16);
+          if (y + 1 < H && x > 0)   push(i+W-1,   3/16);
+          if (y + 1 < H)            push(i+W,     5/16);
+          if (y + 1 < H && x+1 < W) push(i+W+1,   1/16);
+        }
+      }
+    } else {
+      const buf = new Float32Array(N * 3);
+      for (let i = 0; i < N; i++) {
+        buf[i*3] = adj[i*3]; buf[i*3+1] = adj[i*3+1]; buf[i*3+2] = adj[i*3+2];
+      }
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const i = y * W + x, k = i * 3;
+          if (idx[i] === TRANS) continue;
+          const pi = pick(buf[k], buf[k+1], buf[k+2]);
+          idx[i] = pi;
+          const er = buf[k]   - palRGB[pi][0];
+          const eg = buf[k+1] - palRGB[pi][1];
+          const eb = buf[k+2] - palRGB[pi][2];
+          const push = (di, w) => {
+            if (di < 0 || di >= N || idx[di] === TRANS) return;
+            buf[di*3] += er*w; buf[di*3+1] += eg*w; buf[di*3+2] += eb*w;
+          };
+          if (x + 1 < W)            push(i+1,     7/16);
+          if (y + 1 < H && x > 0)   push(i+W-1,   3/16);
+          if (y + 1 < H)            push(i+W,     5/16);
+          if (y + 1 < H && x+1 < W) push(i+W+1,   1/16);
+        }
+      }
+    }
+  } else if (state.pxartDither === 'bayer') {
+    const Mx = BAYER_4, m = 4, norm = 16;
+    for (let i = 0; i < N; i++) {
+      if (idx[i] === TRANS) continue;
+      const x = i % W, y = (i / W) | 0;
+      const bias = ((Mx[y % m][x % m] + 0.5) / norm - 0.5) * 64;
+      idx[i] = pick(adj[i*3] + bias, adj[i*3+1] + bias, adj[i*3+2] + bias);
+    }
+  } else {
+    for (let i = 0; i < N; i++) {
+      if (idx[i] === TRANS) continue;
+      idx[i] = pick(adj[i*3], adj[i*3+1], adj[i*3+2]);
+    }
+  }
+
+  // ---- 6. Detect palette-boundary edges -------------------------------
+  // For each pixel, check 4-neighbors. If a neighbor is a different
+  // palette entry whose OKLab distance exceeds the threshold, the
+  // current pixel is an "edge" pixel — it gets painted with the
+  // outline color. This is the "hand-inked" look in pixel art:
+  // outlines follow the posterized regions, not the photo's noisy edges.
+  const EDGE = -3;
+  if (state.pxartOutlines) {
+    const thr = (state.pxartEdgeThr || 0) / 100;
+    const thr2 = thr * thr;
+    const edges = new Uint8Array(N);
+    const labDist2 = (a, b) => {
+      const la = palLab[a], lb = palLab[b];
+      const dL = la[0]-lb[0], dA = la[1]-lb[1], dB = la[2]-lb[2];
+      return dL*dL + dA*dA + dB*dB;
+    };
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (idx[i] < 0) continue;
+        const here = idx[i];
+        let neighborDiffers = false;
+        if (x > 0)     { const n = idx[i-1]; if (n >= 0 && n !== here && labDist2(here, n) >= thr2) neighborDiffers = true; }
+        if (!neighborDiffers && x < W-1) { const n = idx[i+1]; if (n >= 0 && n !== here && labDist2(here, n) >= thr2) neighborDiffers = true; }
+        if (!neighborDiffers && y > 0)   { const n = idx[i-W]; if (n >= 0 && n !== here && labDist2(here, n) >= thr2) neighborDiffers = true; }
+        if (!neighborDiffers && y < H-1) { const n = idx[i+W]; if (n >= 0 && n !== here && labDist2(here, n) >= thr2) neighborDiffers = true; }
+        if (neighborDiffers) edges[i] = 1;
+      }
+    }
+    // Thickness: dilate edges by 1 (mark 4-neighbors of edge pixels too)
+    if (state.pxartThickness >= 2) {
+      const dil = new Uint8Array(N);
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const i = y * W + x;
+          if (edges[i]) dil[i] = 1;
+          else if ((x > 0 && edges[i-1]) || (x < W-1 && edges[i+1])
+                || (y > 0 && edges[i-W]) || (y < H-1 && edges[i+W])) dil[i] = 1;
+        }
+      }
+      for (let i = 0; i < N; i++) if (dil[i] && idx[i] >= 0) idx[i] = EDGE;
+    } else {
+      for (let i = 0; i < N; i++) if (edges[i]) idx[i] = EDGE;
+    }
+  }
+
+  // ---- 7. Compose RGBA + count palette usage --------------------------
+  const rgba = new Uint8ClampedArray(N * 4);
+  const counts = new Int32Array(palRGB.length);
+  const outline = hexToRgb(state.pxartOutlineColor);
+  for (let i = 0; i < N; i++) {
+    const p = idx[i];
+    if (p === TRANS) {
+      rgba[i*4+3] = 0;
+    } else if (p === EDGE) {
+      rgba[i*4]   = outline[0];
+      rgba[i*4+1] = outline[1];
+      rgba[i*4+2] = outline[2];
+      rgba[i*4+3] = 255;
+    } else {
+      rgba[i*4]   = palRGB[p][0];
+      rgba[i*4+1] = palRGB[p][1];
+      rgba[i*4+2] = palRGB[p][2];
+      rgba[i*4+3] = 255;
+      counts[p]++;
+    }
+  }
+  return { w: W, h: H, rgba, palette: palHex, palRGB, counts };
+}
+
+function drawPixelize(ctx, data, maxDisp = 512) {
+  // Reuse Sprite's drawing — same shape data.
+  drawSprite(ctx, data, maxDisp);
 }
 
 /* =========================================================
@@ -7157,6 +7570,10 @@ function computeValueMap() {
     state.sprData = runSprite();
     state.cellStripes = null;
     state.cellLens = null;
+  } else if (state.mode === 'pxart') {
+    state.pxartData = runPixelize();
+    state.cellStripes = null;
+    state.cellLens = null;
   } else if (state.mode === 'glitch') {
     state.gltData = runGlitch();
     state.cellStripes = null;
@@ -7373,6 +7790,20 @@ function renderMosaic() {
     legend.style.display = 'flex';
     legend.innerHTML = state.sprData.palette.map((hex, i) =>
       `<span class="item"><span class="sq" style="background:${hex}"></span>${state.sprData.counts[i] || 0}</span>`
+    ).join('');
+    return;
+  }
+  if (state.mode === 'pxart') {
+    if (!state.pxartData) return;
+    drawPixelize(canvas.getContext('2d'), state.pxartData);
+    const used = state.pxartData.counts.filter(n => n > 0).length;
+    $('#gray-meta').textContent = `${state.pxartData.w}×${state.pxartData.h} px · ${state.pxartStyle} · ${used} colors`;
+    $('#mosaic-title').textContent = 'Pixelize preview';
+    $('#gray-legend').style.display = 'none';
+    const legend = $('#mosaic-palette-legend');
+    legend.style.display = 'flex';
+    legend.innerHTML = state.pxartData.palette.map((hex, i) =>
+      `<span class="item"><span class="sq" style="background:${hex}"></span>${state.pxartData.counts[i] || 0}</span>`
     ).join('');
     return;
   }
@@ -7836,6 +8267,19 @@ function renderNumberGrid() {
     ).join('');
     return;
   }
+  if (state.mode === 'pxart') {
+    if (!state.pxartData) return;
+    drawPixelize(canvas.getContext('2d'), state.pxartData, 700);
+    const used = state.pxartData.counts.filter(n => n > 0).length;
+    $('#num-meta').textContent = `${state.pxartData.w}×${state.pxartData.h} px · ${used} colors`;
+    $('#num-hint').textContent = 'Pixelize PNG (1:1) exports the true-size artwork. ×8 PNG exports a scaled-up copy.';
+    const legend = $('#num-palette-legend');
+    legend.style.display = 'flex';
+    legend.innerHTML = state.pxartData.palette.map((hex, i) =>
+      `<span class="item"><span class="sq" style="background:${hex}"></span>${i + 1}: ${state.pxartData.counts[i] || 0}</span>`
+    ).join('');
+    return;
+  }
   if (state.mode === 'glitch') {
     if (!state.gltData) return;
     drawGlitch(canvas.getContext('2d'), state.gltData);
@@ -8024,6 +8468,8 @@ function generate() {
                                               ? 'Pixel PNG'
                                               : state.mode === 'sprite'
                                                 ? 'Sprite PNG (1:1)'
+                                              : state.mode === 'pxart'
+                                                ? 'Pixelize PNG (1:1)'
                                               : state.mode === 'glitch'
                                                 ? 'Glitch PNG'
                                                 : state.mode === 'tri'
@@ -8035,7 +8481,10 @@ function generate() {
                                                       : state.mode === 'layers'
                                                         ? 'Layers preview PNG'
                                                         : 'Grayscale PNG';
-  $('#export-num').textContent = state.mode === 'sprite' ? 'Sprite ×8 PNG' : 'Number grid PNG';
+  $('#export-num').textContent =
+    state.mode === 'sprite' ? 'Sprite ×8 PNG' :
+    state.mode === 'pxart'  ? 'Pixelize ×8 PNG' :
+    'Number grid PNG';
 }
 
 let autoTimer = null;
@@ -8117,6 +8566,7 @@ $$('#mode button').forEach(btn => {
     $('#mode-tile').style.display = state.mode === 'tile' ? '' : 'none';
     $('#mode-pixel').style.display = state.mode === 'pixel' ? '' : 'none';
     $('#mode-sprite').style.display = state.mode === 'sprite' ? '' : 'none';
+    $('#mode-pxart').style.display = state.mode === 'pxart' ? '' : 'none';
     $('#mode-glitch').style.display = state.mode === 'glitch' ? '' : 'none';
     $('#mode-tri').style.display = state.mode === 'tri' ? '' : 'none';
     $('#mode-riso').style.display = state.mode === 'riso' ? '' : 'none';
@@ -9305,6 +9755,186 @@ $('#sprPalHex').addEventListener('click', () => {
   const lines = state.sprData.palette.map(h => h.replace('#', '').toUpperCase());
   downloadText(lines.join('\n') + '\n', `valuemap_${spritePaletteName()}.hex`, 'text/plain');
 });
+/* Pixelize wiring ----------------------------------------------------- */
+function syncPxartUI() {
+  // Reflect current state into the panel inputs (used after a preset apply).
+  $('#pxartStyle').value = state.pxartStyle;
+  $('#pxartSize').value = state.pxartSize;
+  $('#pxartSmooth').value = state.pxartSmooth;
+  $('#pxartSmoothVal').textContent = state.pxartSmooth;
+  $('#pxartContrast').value = Math.round(state.pxartContrast * 100);
+  $('#pxartContrastVal').textContent = state.pxartContrast.toFixed(2);
+  $('#pxartSaturation').value = Math.round(state.pxartSaturation * 100);
+  $('#pxartSaturationVal').textContent = state.pxartSaturation.toFixed(2);
+  $$('#pxart-match button').forEach(b => b.classList.toggle('on', b.dataset.m === state.pxartMatch));
+  $$('#pxart-dither button').forEach(b => b.classList.toggle('on', b.dataset.d === state.pxartDither));
+  $$('#pxart-thick button').forEach(b => b.classList.toggle('on', +b.dataset.t === state.pxartThickness));
+  $('#pxartOutlines').checked = state.pxartOutlines;
+  $('#pxart-outline-config').style.display = state.pxartOutlines ? '' : 'none';
+  $('#pxartEdgeThr').value = state.pxartEdgeThr;
+  $('#pxartEdgeThrVal').textContent = state.pxartEdgeThr;
+  $('#pxartOutlinePicker').value = state.pxartOutlineColor;
+  $('#pxartOutlineHex').value = state.pxartOutlineColor.toUpperCase();
+  $('#pxartOutlinePicker').parentElement.style.background = state.pxartOutlineColor;
+  $('#pxartTransparent').checked = state.pxartTransparent;
+  $('#pxart-bgtol').style.display = state.pxartTransparent ? '' : 'none';
+  $('#pxartBgTol').value = state.pxartBgTol;
+  $('#pxartBgTolVal').textContent = state.pxartBgTol;
+}
+function applyPxartStyle(key) {
+  const p = PXART_STYLES[key];
+  if (!p) { state.pxartStyle = 'custom'; return; }
+  state.pxartStyle = key;
+  state.pxartSmooth = p.smooth;
+  state.pxartContrast = p.contrast;
+  state.pxartSaturation = p.saturation;
+  state.pxartMatch = p.match;
+  state.pxartDither = p.dither;
+  state.pxartOutlines = p.outlines;
+  state.pxartEdgeThr = p.edgeThr;
+  state.pxartThickness = p.thickness;
+  state.pxartOutlineColor = p.outlineColor;
+  syncPxartUI();
+}
+function pxartTouchCustom() {
+  if (state.pxartStyle !== 'custom') {
+    state.pxartStyle = 'custom';
+    $('#pxartStyle').value = 'custom';
+  }
+}
+$('#pxartStyle').addEventListener('change', e => {
+  applyPxartStyle(e.target.value);
+  autoGenerateDebounced();
+});
+$('#pxartSize').addEventListener('input', e => {
+  state.pxartSize = clamp(parseInt(e.target.value, 10) || 64, 16, 256);
+  autoGenerateDebounced();
+});
+$('#pxartSmooth').addEventListener('input', e => {
+  state.pxartSmooth = clamp(parseInt(e.target.value, 10) || 0, 0, 4);
+  $('#pxartSmoothVal').textContent = state.pxartSmooth;
+  pxartTouchCustom();
+  autoGenerateDebounced();
+});
+$('#pxartContrast').addEventListener('input', e => {
+  state.pxartContrast = clamp((parseInt(e.target.value, 10) || 100) / 100, 0.5, 2.2);
+  $('#pxartContrastVal').textContent = state.pxartContrast.toFixed(2);
+  pxartTouchCustom();
+  autoGenerateDebounced();
+});
+$('#pxartSaturation').addEventListener('input', e => {
+  state.pxartSaturation = clamp((parseInt(e.target.value, 10) || 100) / 100, 0, 2.4);
+  $('#pxartSaturationVal').textContent = state.pxartSaturation.toFixed(2);
+  pxartTouchCustom();
+  autoGenerateDebounced();
+});
+$$('#pxart-match button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('#pxart-match button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    state.pxartMatch = btn.dataset.m;
+    pxartTouchCustom();
+    autoGenerateDebounced();
+  });
+});
+$$('#pxart-dither button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('#pxart-dither button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    state.pxartDither = btn.dataset.d;
+    pxartTouchCustom();
+    autoGenerateDebounced();
+  });
+});
+$('#pxartOutlines').addEventListener('change', e => {
+  state.pxartOutlines = e.target.checked;
+  $('#pxart-outline-config').style.display = state.pxartOutlines ? '' : 'none';
+  pxartTouchCustom();
+  autoGenerateDebounced();
+});
+$('#pxartEdgeThr').addEventListener('input', e => {
+  state.pxartEdgeThr = clamp(parseInt(e.target.value, 10) || 22, 5, 80);
+  $('#pxartEdgeThrVal').textContent = state.pxartEdgeThr;
+  pxartTouchCustom();
+  autoGenerateDebounced();
+});
+$$('#pxart-thick button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('#pxart-thick button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    state.pxartThickness = parseInt(btn.dataset.t, 10);
+    pxartTouchCustom();
+    autoGenerateDebounced();
+  });
+});
+$('#pxartOutlinePicker').addEventListener('input', e => {
+  state.pxartOutlineColor = e.target.value;
+  $('#pxartOutlineHex').value = e.target.value.toUpperCase();
+  e.target.parentElement.style.background = e.target.value;
+  pxartTouchCustom();
+  autoGenerateDebounced();
+});
+$('#pxartOutlineHex').addEventListener('input', e => {
+  const v = e.target.value.trim();
+  if (!/^#?[0-9a-fA-F]{6}$/.test(v)) return;
+  const norm = v.startsWith('#') ? v : '#' + v;
+  state.pxartOutlineColor = norm;
+  $('#pxartOutlinePicker').value = norm;
+  $('#pxartOutlinePicker').parentElement.style.background = norm;
+  pxartTouchCustom();
+  autoGenerateDebounced();
+});
+$('#pxartTransparent').addEventListener('change', e => {
+  state.pxartTransparent = e.target.checked;
+  $('#pxart-bgtol').style.display = state.pxartTransparent ? '' : 'none';
+  pxartTouchCustom();
+  autoGenerateDebounced();
+});
+$('#pxartBgTol').addEventListener('input', e => {
+  state.pxartBgTol = clamp(parseInt(e.target.value, 10) || 14, 2, 40);
+  $('#pxartBgTolVal').textContent = state.pxartBgTol;
+  pxartTouchCustom();
+  autoGenerateDebounced();
+});
+
+/* Pixelize palette-file exports (same set as Sprite) */
+function pxartPaletteName() {
+  return state.pxartStyle || 'custom';
+}
+$('#pxartPalGpl').addEventListener('click', () => {
+  if (!state.pxartData) return;
+  const lines = ['GIMP Palette', `Name: Pixelize ${pxartPaletteName()}`, 'Columns: 0', '#'];
+  state.pxartData.palRGB.forEach(([r, g, b], i) => {
+    const pad = n => String(n).padStart(3, ' ');
+    lines.push(`${pad(r)} ${pad(g)} ${pad(b)}\tColor ${i + 1}`);
+  });
+  downloadText(lines.join('\n') + '\n', `pixelize_${pxartPaletteName()}.gpl`, 'text/plain');
+});
+$('#pxartPalPal').addEventListener('click', () => {
+  if (!state.pxartData) return;
+  const cols = state.pxartData.palRGB;
+  const lines = ['JASC-PAL', '0100', String(cols.length)];
+  cols.forEach(([r, g, b]) => lines.push(`${r} ${g} ${b}`));
+  downloadText(lines.join('\r\n') + '\r\n', `pixelize_${pxartPaletteName()}.pal`, 'text/plain');
+});
+$('#pxartPalHex').addEventListener('click', () => {
+  if (!state.pxartData) return;
+  const lines = state.pxartData.palette.map(h => h.replace('#', '').toUpperCase());
+  downloadText(lines.join('\n') + '\n', `pixelize_${pxartPaletteName()}.hex`, 'text/plain');
+});
+$('#pxartPalPng').addEventListener('click', () => {
+  if (!state.pxartData) return;
+  const sw = 16, cols = state.pxartData.palRGB;
+  const cv = document.createElement('canvas');
+  cv.width = sw * cols.length; cv.height = sw;
+  const cx = cv.getContext('2d');
+  cols.forEach(([r, g, b], i) => {
+    cx.fillStyle = `rgb(${r},${g},${b})`;
+    cx.fillRect(i * sw, 0, sw, sw);
+  });
+  downloadCanvas(cv, `pixelize_${pxartPaletteName()}_palette.png`);
+});
+
 $('#sprPalPng').addEventListener('click', () => {
   if (!state.sprData) return;
   // Swatch strip — any tool can "create palette from image".
@@ -9970,6 +10600,16 @@ $('#export-gray').addEventListener('click', async () => {
     cv.getContext('2d').putImageData(id, 0, 0);
     downloadCanvas(cv, `sprite_${d.w}x${d.h}_${state.sprPaletteMode === 'console' ? state.sprConsole : state.sprPaletteMode}.png`);
     return;
+  } else if (state.mode === 'pxart') {
+    if (!state.pxartData) return;
+    const d = state.pxartData;
+    const cv = document.createElement('canvas');
+    cv.width = d.w; cv.height = d.h;
+    const id = cv.getContext('2d').createImageData(d.w, d.h);
+    id.data.set(d.rgba);
+    cv.getContext('2d').putImageData(id, 0, 0);
+    downloadCanvas(cv, `pixelize_${d.w}x${d.h}_${state.pxartStyle}.png`);
+    return;
   } else if (state.mode === 'glitch') {
     if (!state.gltData) return;
     const cv = document.createElement('canvas');
@@ -10221,10 +10861,10 @@ $('#export-num').addEventListener('click', () => {
     downloadCanvas(canvas, `value-map-region-numbers_${exW}x${exH}_${state.regionLevels}v.png`);
     return;
   }
-  if (state.mode === 'sprite') {
-    // Scaled-up sprite (8x, nearest-neighbour) — for sharing / store pages.
-    if (!state.sprData) return;
-    const d = state.sprData;
+  if (state.mode === 'sprite' || state.mode === 'pxart') {
+    // Scaled-up (8x, nearest-neighbour) — for sharing / store pages.
+    const d = state.mode === 'sprite' ? state.sprData : state.pxartData;
+    if (!d) return;
     const scale = 8;
     const back = document.createElement('canvas');
     back.width = d.w; back.height = d.h;
@@ -10236,7 +10876,9 @@ $('#export-num').addEventListener('click', () => {
     const cx = cv.getContext('2d');
     cx.imageSmoothingEnabled = false;
     cx.drawImage(back, 0, 0, cv.width, cv.height);
-    downloadCanvas(cv, `sprite_${d.w}x${d.h}_x${scale}.png`);
+    const prefix = state.mode === 'sprite' ? 'sprite' : 'pixelize';
+    const tag = state.mode === 'sprite' ? '' : `_${state.pxartStyle}`;
+    downloadCanvas(cv, `${prefix}_${d.w}x${d.h}${tag}_x${scale}.png`);
     return;
   }
   const { cols, rows, values } = state;
