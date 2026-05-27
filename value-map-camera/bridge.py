@@ -46,12 +46,13 @@ PORT = 8132
 APP_DIR = Path(__file__).resolve().parent.parent
 CAPTURE_DIR = Path(os.environ.get("VALUEMAP_CAPTURE_DIR", Path.home() / "captures"))
 
-# GPIO pins (BCM numbering). Two shutter buttons so the camera works in
-# both landscape and portrait without reaching for the wrong one.
-SHUTTER_PINS = [17, 27]
-# Optional mode-cycle buttons (set to [] if you don't wire any)
-MODE_NEXT_PIN = 22
-MODE_PREV_PIN = 23
+# GPIO pins (BCM numbering). Chosen to avoid collisions with the 3.5"
+# Waveshare SPI screen, which uses GPIO 7-11 (SPI bus), 17 (touch IRQ),
+# 18, 22, 24, 25 for the display itself. The pins below are reliably
+# free on that screen + most other 3.5" GPIO LCDs.
+SHUTTER_PINS = [5, 6]            # two buttons so it works in either orientation
+MODE_NEXT_PIN = 12               # set to None if you don't wire it
+MODE_PREV_PIN = 13               # set to None if you don't wire it
 
 # MPU-6050 accelerometer
 I2C_BUS = 1

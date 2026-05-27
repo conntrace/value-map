@@ -1,7 +1,9 @@
 # value-map-camera
 
 Everything needed to run the Value Map app as a standalone handheld
-camera on a Raspberry Pi 5.
+camera. **Target build: Raspberry Pi 4 + 3.5" Waveshare SPI screen**
+(~$120, cassette-deck sized). Works identically on Pi 5 + 5" DSI if you
+prefer larger / more headroom.
 
 ## Files
 
