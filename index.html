@@ -583,6 +583,7 @@
           <button data-mode="riso">Riso</button>
           <button data-mode="bead">Bead</button>
           <button data-mode="layers">Layers</button>
+          <button data-mode="relief">Relief</button>
         </div>
 
         <div id="mode-values">
@@ -751,6 +752,74 @@
           <div class="hint" style="margin-bottom: 10px;">On: each layer's shape includes everything darker (good for stacked-paper depth). Off: each layer is just its own band.</div>
           <button id="lay-svg-each" class="btn ghost wide" style="font-size: 11.5px;">Download one SVG per layer</button>
           <div class="hint">For laser/Cricut: cut each SVG from a separate sheet, stack them in order — bottom = lightest, top = darkest.</div>
+        </div>
+
+        <div id="mode-relief" style="display: none;">
+          <div class="hint" style="margin-bottom: 12px; padding: 8px 10px; background:#FBF7EF; border-left: 3px solid #C4452B;">
+            Generates a <strong>height map</strong> for fabricating a physical relief panel. Carve / mill / 3D-print the depth, light it from one edge at a grazing angle, and the image emerges in cast shadows.
+          </div>
+          <label class="field">Output resolution (px)</label>
+          <input type="number" id="reliefRes" min="64" max="1024" value="320" />
+          <div class="hint" style="margin-bottom: 10px;">Longest edge of the depth map. CNC mills typically work well at 200–500; 3D printers can handle higher.</div>
+          <label class="field">Light direction (rake)</label>
+          <div class="toggle" id="relief-rake" style="margin-bottom: 10px;">
+            <button data-r="left" class="on">Left</button>
+            <button data-r="right">Right</button>
+            <button data-r="top">Top</button>
+            <button data-r="bottom">Bottom</button>
+          </div>
+          <div class="hint" style="margin-bottom: 10px;">Which edge of the panel the LED strip will sit on. Preview simulates the shadows you'll actually see.</div>
+          <label class="field">Mapping</label>
+          <div class="toggle" id="relief-mapping" style="margin-bottom: 10px;">
+            <button data-m="direct" class="on">Direct</button>
+            <button data-m="integral">Integral rake</button>
+            <button data-m="stepped">Stepped</button>
+          </div>
+          <div class="hint" id="relief-mapping-hint" style="margin-bottom: 10px;">Direct: bas-relief — bright pixels stay high, dark pixels are recessed. Edges cast the shadows.</div>
+          <div id="relief-stepped-config" style="display:none; margin-bottom: 10px;">
+            <label class="field">Step levels</label>
+            <input type="number" id="reliefLevels" min="3" max="16" value="6" />
+            <div class="hint">Discrete depth bands — good for multi-pass laser engraving.</div>
+          </div>
+          <label class="check-row" style="margin-bottom: 8px;">
+            <input type="checkbox" id="reliefInvert" />
+            <span>Invert (dark = high)</span>
+          </label>
+          <label class="field">Smoothing</label>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
+            <input type="range" id="reliefSmooth" min="0" max="6" value="2" style="width:120px;" />
+            <span id="reliefSmoothVal">2</span>
+          </div>
+          <label class="field">Contrast</label>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
+            <input type="range" id="reliefContrast" min="50" max="220" value="125" style="width:120px;" />
+            <span id="reliefContrastVal">1.25</span>
+          </div>
+          <label class="field">Preview</label>
+          <div class="toggle" id="relief-preview" style="margin-bottom: 12px;">
+            <button data-p="raking" class="on">Raking light</button>
+            <button data-p="height">Height map</button>
+          </div>
+          <div class="hint" style="margin-bottom: 10px;"><strong>Raking light</strong> simulates the LED-from-edge installation — what shadows you'll actually see. <strong>Height map</strong> shows the raw depth data.</div>
+          <label class="field">Physical size</label>
+          <div class="row" style="margin-bottom: 10px;">
+            <div>
+              <label class="field" style="font-size:10px;">Panel (mm)</label>
+              <input type="number" id="reliefSize" min="20" max="600" value="200" />
+            </div>
+            <div>
+              <label class="field" style="font-size:10px;">Max depth (mm)</label>
+              <input type="number" id="reliefDepth" min="1" max="40" step="0.5" value="8" />
+            </div>
+          </div>
+          <div class="hint" style="margin-bottom: 10px;">Used by the STL export only. 200×200 mm panel with 8 mm max recess is a sensible "wall art" starting point.</div>
+          <label class="field" style="margin-top: 4px;">Fabrication exports</label>
+          <div style="display:flex; gap:6px; margin-bottom: 4px;">
+            <button id="reliefPng16" class="btn ghost" style="font-size: 11px; flex:1;">Depth PNG (16-bit)</button>
+            <button id="reliefStl" class="btn ghost" style="font-size: 11px; flex:1;">STL mesh</button>
+            <button id="reliefScad" class="btn ghost" style="font-size: 11px; flex:1;">OpenSCAD</button>
+          </div>
+          <div class="hint">PNG 16-bit → CNC software (Carveco, Vectric, Estlcam). STL → 3D printer / Bambu / Prusa. OpenSCAD → parametric model you can tweak.</div>
         </div>
 
         <div id="mode-riso" style="display: none;">
@@ -2085,6 +2154,19 @@ const state = {
   stipDir: 'dark-many',     // 'dark-many' | 'dark-few'
   stipFg: '#1A1A1A',
   stipBg: '#FBF7EF',
+
+  // Relief — height-map for fabricating a raked-light shadow-art panel
+  reliefRes: 320,
+  reliefRake: 'left',
+  reliefMapping: 'direct',
+  reliefLevels: 6,
+  reliefInvert: false,
+  reliefSmooth: 2,
+  reliefContrast: 1.25,
+  reliefPreview: 'raking',
+  reliefSize: 200,       // physical panel size in mm (longest edge)
+  reliefDepth: 8,        // physical max recess depth in mm
+  reliefData: null,      // { w, h, height (Float32 0-1), preview (Uint8ClampedArray RGBA) }
 
   // Layers — value-quantized stack for layered paper sculpture
   layLevels: 5,
@@ -5597,6 +5679,280 @@ function buildLayerSVG(data, layer, fill) {
 }
 
 /* =========================================================
+   Relief — height map for fabricating a raked-light shadow-art panel.
+
+   The output is depth data. A CNC mill, 3D printer, or laser engraver
+   turns that depth into a physical panel. Light from one edge at a
+   grazing angle then casts shadows that reveal the image.
+
+   Pipeline: sample → smooth → contrast → derive height (one of three
+   mappings) → optionally invert → render either a raking-light
+   simulation or the raw height map.
+========================================================= */
+function runRelief() {
+  if (!state.img || !state.crop) return null;
+  const c = state.crop;
+  const longEdge = clamp(state.reliefRes | 0, 64, 1024);
+  const ar = c.w / c.h;
+  let W, H;
+  if (ar >= 1) { W = longEdge; H = Math.max(1, Math.round(longEdge / ar)); }
+  else { H = longEdge; W = Math.max(1, Math.round(longEdge * ar)); }
+  const src = sampleCropToBuffer(W, H);
+  const N = W * H;
+
+  // 1. Luminance, with contrast lift
+  let lum = new Float32Array(N);
+  const k = state.reliefContrast;
+  for (let i = 0; i < N; i++) {
+    let Y = 0.2126*src[i*4] + 0.7152*src[i*4+1] + 0.0722*src[i*4+2];
+    Y = (Y - 128) * k + 128;
+    lum[i] = clamp(Y / 255, 0, 1);
+  }
+  // 2. Smoothing
+  for (let p = 0; p < state.reliefSmooth; p++) lum = gaussianBlurFloat(lum, W, H, 1);
+
+  // 3. Mapping → 0..1 height field
+  let height = new Float32Array(N);
+  const invert = state.reliefInvert;
+  const baseHi = invert ? 0 : 1;     // bright pixels
+  const baseLo = invert ? 1 : 0;     // dark pixels
+  const map01 = v => baseLo + (baseHi - baseLo) * v;
+
+  if (state.reliefMapping === 'direct') {
+    // Direct bas-relief — Z proportional to brightness
+    for (let i = 0; i < N; i++) height[i] = map01(lum[i]);
+  } else if (state.reliefMapping === 'stepped') {
+    const L = Math.max(2, state.reliefLevels | 0);
+    for (let i = 0; i < N; i++) {
+      const v = map01(lum[i]);
+      height[i] = Math.round(v * (L - 1)) / (L - 1);
+    }
+  } else {
+    // Integral rake — cumulative descent along the light-cast direction.
+    // Each row/column starts at full height; every dark pixel drops the
+    // current Z by a small amount. Result: the image emerges as a
+    // staircase whose risers cast the shadows that draw the picture.
+    const rake = state.reliefRake;
+    const dropPerUnit = 1.0 / Math.max(W, H);
+    if (rake === 'left' || rake === 'right') {
+      const reverse = rake === 'right';
+      for (let y = 0; y < H; y++) {
+        let z = 1;
+        for (let xx = 0; xx < W; xx++) {
+          const x = reverse ? (W - 1 - xx) : xx;
+          z -= (1 - lum[y*W + x]) * dropPerUnit;
+          height[y*W + x] = clamp(z, 0, 1);
+        }
+      }
+    } else {
+      const reverse = rake === 'bottom';
+      for (let x = 0; x < W; x++) {
+        let z = 1;
+        for (let yy = 0; yy < H; yy++) {
+          const y = reverse ? (H - 1 - yy) : yy;
+          z -= (1 - lum[y*W + x]) * dropPerUnit;
+          height[y*W + x] = clamp(z, 0, 1);
+        }
+      }
+    }
+    if (invert) for (let i = 0; i < N; i++) height[i] = 1 - height[i];
+  }
+
+  // Re-normalize so the field uses the full 0..1 range (matters for
+  // contrast and STL depth scaling).
+  let mn = Infinity, mx = -Infinity;
+  for (let i = 0; i < N; i++) { if (height[i] < mn) mn = height[i]; if (height[i] > mx) mx = height[i]; }
+  const range = Math.max(1e-6, mx - mn);
+  for (let i = 0; i < N; i++) height[i] = (height[i] - mn) / range;
+
+  // 4. Preview
+  const preview = new Uint8ClampedArray(N * 4);
+  if (state.reliefPreview === 'height') {
+    for (let i = 0; i < N; i++) {
+      const v = Math.round(height[i] * 255);
+      preview[i*4] = v; preview[i*4+1] = v; preview[i*4+2] = v; preview[i*4+3] = 255;
+    }
+  } else {
+    // Raking-light simulation. Light skims across the surface from the
+    // chosen edge; brightness ≈ -∂Z/∂rake (slopes facing the light = bright,
+    // facing away = shadow). Plus a small ambient term so deep recesses
+    // aren't pure black.
+    const rake = state.reliefRake;
+    const ambient = 0.18;
+    const lightStrength = 4.0;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        let grad;
+        if (rake === 'left') {
+          grad = (x < W - 1) ? (height[i+1] - height[i]) : 0;
+        } else if (rake === 'right') {
+          grad = (x > 0) ? (height[i-1] - height[i]) : 0;
+        } else if (rake === 'top') {
+          grad = (y < H - 1) ? (height[i+W] - height[i]) : 0;
+        } else {
+          grad = (y > 0) ? (height[i-W] - height[i]) : 0;
+        }
+        // Surface facing the light → positive grad in rake direction → bright
+        const lit = clamp(grad * lightStrength + ambient, 0, 1);
+        // Modulate slightly by absolute height so deep recesses fall darker
+        const v = Math.round(clamp(lit * (0.5 + 0.5 * height[i]), 0, 1) * 255);
+        preview[i*4] = v; preview[i*4+1] = v; preview[i*4+2] = v; preview[i*4+3] = 255;
+      }
+    }
+  }
+
+  return { w: W, h: H, height, preview };
+}
+
+function drawRelief(ctx, data, maxDisp = 720) {
+  const aspect = data.h / data.w;
+  const targetW = Math.min(maxDisp, data.w * 2);
+  const targetH = Math.round(targetW * aspect);
+  ctx.canvas.width = targetW;
+  ctx.canvas.height = targetH;
+  ctx.imageSmoothingEnabled = false;
+  const back = document.createElement('canvas');
+  back.width = data.w; back.height = data.h;
+  const bctx = back.getContext('2d');
+  const id = bctx.createImageData(data.w, data.h);
+  id.data.set(data.preview);
+  bctx.putImageData(id, 0, 0);
+  ctx.drawImage(back, 0, 0, targetW, targetH);
+}
+
+/* 16-bit depth PNG via the standard "split high/low byte across R and G"
+   convention that Carveco / Vectric / Estlcam all understand. Browser
+   canvas can only emit 8-bit per channel, so we use the R channel as the
+   high byte and G as the low byte; the receiving CNC tool reads R*256+G
+   as the 16-bit height. Falls back to a normal 8-bit grayscale image to
+   any tool that doesn't know the trick. */
+function buildReliefDepthPNG(data) {
+  const W = data.w, H = data.h;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const cx = cv.getContext('2d');
+  const id = cx.createImageData(W, H);
+  for (let i = 0; i < W * H; i++) {
+    const v = Math.round(data.height[i] * 65535);
+    id.data[i*4]   = (v >> 8) & 0xff;
+    id.data[i*4+1] = v & 0xff;
+    id.data[i*4+2] = (v >> 8) & 0xff;  // pure-grayscale fallback: R==B
+    id.data[i*4+3] = 255;
+  }
+  cx.putImageData(id, 0, 0);
+  return cv;
+}
+
+/* Binary STL of the heightfield as a closed solid (top surface + 4 walls
+   + flat bottom). Watertight, ready for any slicer. */
+function buildReliefSTL(data) {
+  const W = data.w, H = data.h;
+  const physW = state.reliefSize;
+  const physH = physW * (H / W);
+  const maxZ = state.reliefDepth;
+  const sx = physW / Math.max(1, W - 1);
+  const sy = physH / Math.max(1, H - 1);
+  const Z = i => data.height[i] * maxZ;
+
+  const triangles = [];
+  const tri = (a, b, c) => triangles.push([a, b, c]);
+
+  // Top surface
+  for (let y = 0; y < H - 1; y++) {
+    for (let x = 0; x < W - 1; x++) {
+      const i00 = y * W + x, i10 = i00 + 1, i01 = i00 + W, i11 = i01 + 1;
+      const v00 = [x*sx,     y*sy,     Z(i00)];
+      const v10 = [(x+1)*sx, y*sy,     Z(i10)];
+      const v01 = [x*sx,     (y+1)*sy, Z(i01)];
+      const v11 = [(x+1)*sx, (y+1)*sy, Z(i11)];
+      tri(v00, v10, v11);
+      tri(v00, v11, v01);
+    }
+  }
+  // Walls: each edge of the top surface drops to z=0 plane
+  for (let x = 0; x < W - 1; x++) {
+    // front (y=0) wall
+    const a = [x*sx,     0, Z(x)];
+    const b = [(x+1)*sx, 0, Z(x+1)];
+    const c = [(x+1)*sx, 0, 0];
+    const d = [x*sx,     0, 0];
+    tri(a, c, b); tri(a, d, c);
+    // back (y=physH) wall
+    const i0 = (H-1)*W + x, i1 = i0 + 1;
+    const e = [x*sx,     physH, Z(i0)];
+    const f = [(x+1)*sx, physH, Z(i1)];
+    const g = [(x+1)*sx, physH, 0];
+    const h = [x*sx,     physH, 0];
+    tri(e, f, g); tri(e, g, h);
+  }
+  for (let y = 0; y < H - 1; y++) {
+    // left (x=0) wall
+    const a = [0, y*sy,     Z(y*W)];
+    const b = [0, (y+1)*sy, Z((y+1)*W)];
+    const c = [0, (y+1)*sy, 0];
+    const d = [0, y*sy,     0];
+    tri(a, b, c); tri(a, c, d);
+    // right (x=physW) wall
+    const i0 = y*W + (W-1), i1 = (y+1)*W + (W-1);
+    const e = [physW, y*sy,     Z(i0)];
+    const f = [physW, (y+1)*sy, Z(i1)];
+    const g = [physW, (y+1)*sy, 0];
+    const h = [physW, y*sy,     0];
+    tri(e, g, f); tri(e, h, g);
+  }
+  // Bottom — flat at z=0
+  tri([0,0,0], [physW,0,0], [physW,physH,0]);
+  tri([0,0,0], [physW,physH,0], [0,physH,0]);
+
+  // Encode as binary STL
+  const Nt = triangles.length;
+  const buf = new ArrayBuffer(84 + 50 * Nt);
+  const view = new DataView(buf);
+  // header is 80 bytes of free text; leave zeros
+  view.setUint32(80, Nt, true);
+  let off = 84;
+  for (const [a, b, c] of triangles) {
+    const ux = b[0]-a[0], uy = b[1]-a[1], uz = b[2]-a[2];
+    const vx = c[0]-a[0], vy = c[1]-a[1], vz = c[2]-a[2];
+    let nx = uy*vz - uz*vy, ny = uz*vx - ux*vz, nz = ux*vy - uy*vx;
+    const len = Math.hypot(nx, ny, nz) || 1;
+    nx /= len; ny /= len; nz /= len;
+    view.setFloat32(off, nx, true); off += 4;
+    view.setFloat32(off, ny, true); off += 4;
+    view.setFloat32(off, nz, true); off += 4;
+    for (const p of [a, b, c]) {
+      view.setFloat32(off, p[0], true); off += 4;
+      view.setFloat32(off, p[1], true); off += 4;
+      view.setFloat32(off, p[2], true); off += 4;
+    }
+    off += 2; // attribute byte count
+  }
+  return new Blob([buf], { type: 'application/octet-stream' });
+}
+
+function buildReliefScad(pngName) {
+  return `// Value Map — relief panel parametric model
+// Place '${pngName}' in the same folder as this .scad, then F6 to render.
+// Adjust panel_w / max_depth to taste. Use OpenSCAD ${'>'}= 2021.01.
+
+panel_w   = ${state.reliefSize};       // mm, longest edge
+max_depth = ${state.reliefDepth};      // mm
+base      = 3;                          // mm, solid backing thickness
+
+union() {
+  // Solid back plate
+  translate([-panel_w/2, -panel_w/2, -base])
+    cube([panel_w, panel_w, base]);
+  // Height-mapped front surface (image -> Z)
+  translate([0, 0, 0])
+    scale([panel_w/255, panel_w/255, max_depth/255])
+      surface(file="${pngName}", center=true, invert=false, convexity=10);
+}
+`;
+}
+
+/* =========================================================
    String art — Petros-Vrellis style greedy line selection.
    Async with periodic yields so the UI stays responsive on
    long greedy searches. A token lets superseded runs bail.
@@ -7661,6 +8017,10 @@ function computeValueMap() {
     state.layData = runLayers();
     state.cellStripes = null;
     state.cellLens = null;
+  } else if (state.mode === 'relief') {
+    state.reliefData = runRelief();
+    state.cellStripes = null;
+    state.cellLens = null;
   } else if (state.mode === 'arc') {
     const origins = activeArcOrigins();
     const D = origins.length;
@@ -7923,6 +8283,16 @@ function renderMosaic() {
     drawLayers(canvas.getContext('2d'), state.layData);
     $('#gray-meta').textContent = `${state.layData.layers.length} layers · ${state.layData.w}×${state.layData.h}`;
     $('#mosaic-title').textContent = 'Layered preview (darker = higher)';
+    $('#gray-legend').style.display = 'none';
+    $('#mosaic-palette-legend').style.display = 'none';
+    return;
+  }
+  if (state.mode === 'relief') {
+    if (!state.reliefData) return;
+    drawRelief(canvas.getContext('2d'), state.reliefData);
+    const label = state.reliefPreview === 'raking' ? 'raking light' : 'height map';
+    $('#gray-meta').textContent = `${state.reliefData.w}×${state.reliefData.h} · ${label} · rake: ${state.reliefRake}`;
+    $('#mosaic-title').textContent = 'Relief preview';
     $('#gray-legend').style.display = 'none';
     $('#mosaic-palette-legend').style.display = 'none';
     return;
@@ -8383,6 +8753,14 @@ function renderNumberGrid() {
     $('#num-palette-legend').style.display = 'none';
     return;
   }
+  if (state.mode === 'relief') {
+    if (!state.reliefData) return;
+    drawRelief(canvas.getContext('2d'), state.reliefData, 720);
+    $('#num-meta').textContent = `${state.reliefData.w}×${state.reliefData.h} · ${state.reliefSize}×${state.reliefSize}mm · ${state.reliefDepth}mm depth`;
+    $('#num-hint').textContent = 'Use the export buttons in the Relief panel — Depth PNG for CNC, STL for 3D printing, OpenSCAD for parametric.';
+    $('#num-palette-legend').style.display = 'none';
+    return;
+  }
   if (state.mode === 'tri') {
     if (!state.triData) return;
     if (state.triStyle === 'palette') {
@@ -8639,6 +9017,7 @@ $$('#mode button').forEach(btn => {
     $('#mode-riso').style.display = state.mode === 'riso' ? '' : 'none';
     $('#mode-bead').style.display = state.mode === 'bead' ? '' : 'none';
     $('#mode-layers').style.display = state.mode === 'layers' ? '' : 'none';
+    $('#mode-relief').style.display = state.mode === 'relief' ? '' : 'none';
     autoGenerateDebounced();
   });
 });
@@ -10499,6 +10878,89 @@ $('#lay-svg-each').addEventListener('click', async () => {
   }
   btn.textContent = orig;
   btn.disabled = false;
+});
+
+/* Relief wiring */
+$('#reliefRes').addEventListener('input', e => {
+  state.reliefRes = clamp(parseInt(e.target.value, 10) || 320, 64, 1024);
+  autoGenerateDebounced();
+});
+$$('#relief-rake button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('#relief-rake button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    state.reliefRake = btn.dataset.r;
+    autoGenerateDebounced();
+  });
+});
+$$('#relief-mapping button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('#relief-mapping button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    state.reliefMapping = btn.dataset.m;
+    $('#relief-stepped-config').style.display = state.reliefMapping === 'stepped' ? '' : 'none';
+    const hints = {
+      direct: 'Direct: bas-relief — bright pixels stay high, dark pixels are recessed. Edges cast the shadows.',
+      integral: 'Integral rake: each row/column descends cumulatively along the light direction. The image emerges as a staircase whose risers cast the picture.',
+      stepped: 'Stepped: discrete depth levels. Easiest path for multi-pass laser engraving.',
+    };
+    $('#relief-mapping-hint').textContent = hints[state.reliefMapping] || hints.direct;
+    autoGenerateDebounced();
+  });
+});
+$('#reliefLevels').addEventListener('input', e => {
+  state.reliefLevels = clamp(parseInt(e.target.value, 10) || 6, 3, 16);
+  autoGenerateDebounced();
+});
+$('#reliefInvert').addEventListener('change', e => {
+  state.reliefInvert = e.target.checked;
+  autoGenerateDebounced();
+});
+$('#reliefSmooth').addEventListener('input', e => {
+  state.reliefSmooth = clamp(parseInt(e.target.value, 10) || 0, 0, 6);
+  $('#reliefSmoothVal').textContent = state.reliefSmooth;
+  autoGenerateDebounced();
+});
+$('#reliefContrast').addEventListener('input', e => {
+  state.reliefContrast = clamp((parseInt(e.target.value, 10) || 100) / 100, 0.5, 2.2);
+  $('#reliefContrastVal').textContent = state.reliefContrast.toFixed(2);
+  autoGenerateDebounced();
+});
+$$('#relief-preview button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('#relief-preview button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    state.reliefPreview = btn.dataset.p;
+    autoGenerateDebounced();
+  });
+});
+$('#reliefSize').addEventListener('input', e => {
+  state.reliefSize = clamp(parseInt(e.target.value, 10) || 200, 20, 600);
+});
+$('#reliefDepth').addEventListener('input', e => {
+  state.reliefDepth = clamp(parseFloat(e.target.value) || 8, 1, 40);
+});
+
+$('#reliefPng16').addEventListener('click', () => {
+  if (!state.reliefData) return;
+  const cv = buildReliefDepthPNG(state.reliefData);
+  downloadCanvas(cv, `relief-depth_${state.reliefData.w}x${state.reliefData.h}_${state.reliefRake}.png`);
+});
+$('#reliefStl').addEventListener('click', () => {
+  if (!state.reliefData) return;
+  const blob = buildReliefSTL(state.reliefData);
+  downloadBlobAsync(blob, `relief_${state.reliefSize}mm_${state.reliefDepth}mm.stl`);
+});
+$('#reliefScad').addEventListener('click', () => {
+  if (!state.reliefData) return;
+  // Save the PNG with a known name so the .scad can reference it.
+  const pngName = `relief-depth.png`;
+  const cv = buildReliefDepthPNG(state.reliefData);
+  downloadCanvas(cv, pngName);
+  setTimeout(() => {
+    const scad = buildReliefScad(pngName);
+    downloadText(scad, 'relief.scad', 'text/plain');
+  }, 400);
 });
 
 /* K-means palette extraction in OKLab */
