@@ -1095,7 +1095,12 @@
             </div>
           </div>
           <input type="text" id="collCapLabel" placeholder="Label (e.g. Bob)" style="width:100%; margin-bottom: 6px; padding: 6px 8px; font-size: 11px;" />
-          <div class="hint" style="margin-bottom: 10px;"><strong>Weight</strong> controls how strongly this face pulls the composite (1× = average, 2× = double-counted). <strong>Region</strong> contributes only those landmarks (Frankenstein mode — eyes from one, mouth from another). <strong>Label</strong> is shown in the labels overlay and time-lapse.</div>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 6px;">
+            <label class="field" style="font-size:10px; margin: 0;">Edge feather</label>
+            <input type="range" id="collFeather" min="0" max="40" value="14" style="width:110px;" />
+            <span id="collFeatherVal">14</span> px
+          </div>
+          <div class="hint" style="margin-bottom: 10px;"><strong>Weight</strong> controls how strongly this face pulls the composite (1× = average, 2× = double-counted). <strong>Region</strong> contributes only that area (Frankenstein — eyes from one, mouth from another). <strong>Feather</strong> softens the boundary so regions blend smoothly into each other (0 = hard edge, 14 = soft). <strong>Label</strong> is shown in the labels overlay and time-lapse.</div>
 
           <button id="collCapture" class="btn" style="width:100%; font-size: 14px; padding: 12px; margin-bottom: 6px;" disabled>Capture face</button>
           <div class="hint" id="collCount" style="margin-bottom: 12px;"><strong>0</strong> faces in composite</div>
@@ -2596,6 +2601,7 @@ const state = {
   collCaptureWeight: 1.0,
   collCaptureRegion: 'full',
   collCaptureLabel: '',
+  collFeatherPx: 14,            // gaussian-blur radius for region mask edges
 
   // Layers — value-quantized stack for layered paper sculpture
   layLevels: 5,
@@ -11647,6 +11653,10 @@ $('#collCapRegion').addEventListener('change', e => {
 $('#collCapLabel').addEventListener('input', e => {
   state.collCaptureLabel = e.target.value;
 });
+$('#collFeather').addEventListener('input', e => {
+  state.collFeatherPx = clamp(parseInt(e.target.value, 10) || 0, 0, 40);
+  $('#collFeatherVal').textContent = state.collFeatherPx;
+});
 
 // History controls
 $('#collViewStep').addEventListener('input', e => {
@@ -13447,6 +13457,85 @@ function computeCollectiveCanonical(srcLms, W, H) {
   return canonical;
 }
 
+// === Region polygon definitions (canonical face mesh indices) ===
+// For features with a natural perimeter (eye / mouth / eyebrow) the indices
+// are ordered around the boundary. For features without an obvious perimeter
+// (nose / cheek) we compute a convex hull at runtime.
+const COLL_FACE_OVAL = [10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109];
+const COLL_RIGHT_EYE_OUTLINE = [33,246,161,160,159,158,157,173,133,155,154,153,145,144,163,7];
+const COLL_LEFT_EYE_OUTLINE  = [263,466,388,387,386,385,384,398,362,382,381,380,374,373,390,249];
+const COLL_MOUTH_OUTLINE = [61,185,40,39,37,0,267,269,270,409,291,375,321,405,314,17,84,181,91,146];
+const COLL_RIGHT_BROW = [70,63,105,66,107,46,53,52,65,55];
+const COLL_LEFT_BROW  = [336,296,334,293,300,276,283,282,295,285];
+const COLL_NOSE_PTS = [1,2,4,5,6,8,19,94,168,195,197,196,236,275,358,122,351,98,327];
+const COLL_RIGHT_CHEEK = [50,101,118,117,123,147,187,205,212,234,236];
+const COLL_LEFT_CHEEK  = [280,330,347,346,352,376,411,425,432,454,266];
+
+// Andrew's monotone-chain convex hull. Returns CCW perimeter points.
+function _convexHull(points) {
+  const pts = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const n = pts.length;
+  if (n < 3) return pts;
+  const cross = (O, A, B) => (A[0] - O[0]) * (B[1] - O[1]) - (A[1] - O[1]) * (B[0] - O[0]);
+  const lower = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  lower.pop(); upper.pop();
+  return lower.concat(upper);
+}
+
+// Region polygons positioned at the canonical landmark coords.
+function _collRegionPolygons(canonical, region) {
+  const get = idxs => idxs.map(i => canonical[i]);
+  const hull = idxs => _convexHull(get(idxs));
+  switch (region) {
+    case 'full':    return [get(COLL_FACE_OVAL)];
+    case 'eye':     return [get(COLL_RIGHT_EYE_OUTLINE), get(COLL_LEFT_EYE_OUTLINE)];
+    case 'mouth':   return [get(COLL_MOUTH_OUTLINE)];
+    case 'eyebrow': return [get(COLL_RIGHT_BROW), get(COLL_LEFT_BROW)];
+    case 'nose':    return [hull(COLL_NOSE_PTS)];
+    case 'cheek':   return [hull(COLL_RIGHT_CHEEK), hull(COLL_LEFT_CHEEK)];
+    default:        return [];
+  }
+}
+
+// Build a Uint8Array (W*H) mask from filled polygons. Optional Gaussian
+// feather softens the edges so adjacent regions blend instead of cutting hard.
+function buildCollectiveRegionMask(W, H, canonical, region, featherPx) {
+  const polygons = _collRegionPolygons(canonical, region);
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  if (featherPx > 0) ctx.filter = `blur(${featherPx}px)`;
+  ctx.fillStyle = '#fff';
+  for (const poly of polygons) {
+    if (!poly || poly.length < 3) continue;
+    ctx.beginPath();
+    ctx.moveTo(poly[0][0], poly[0][1]);
+    for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i][0], poly[i][1]);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.filter = 'none';
+  const data = ctx.getImageData(0, 0, W, H).data;
+  const mask = new Uint8Array(W * H);
+  for (let i = 0, p = 0; i < W * H; i++, p += 4) {
+    // Use the red channel as the mask strength (we drew white onto black).
+    mask[i] = data[p];
+  }
+  return mask;
+}
+
 function captureCollective() {
   if (!state.collLandmarks) {
     alert('No face detected. Position your face clearly in the camera frame.');
@@ -13476,43 +13565,17 @@ function captureCollective() {
     state.collCanonical = computeCollectiveCanonical(srcLms, W, H);
   }
   const canon = state.collCanonical;
-  // Determine which triangles to draw based on the capture region.
-  const regionSet = FACE_FEATURE_GROUPS[state.collCaptureRegion];   // null for 'full' → all
-  const triangleAllowed = (a, b, c) => {
-    if (!regionSet) return true;
-    return regionSet.has(a) && regionSet.has(b) && regionSet.has(c);
-  };
-  // Warp the source face triangles → canonical into an aligned canvas.
+  // Warp the FULL source face → canonical into an aligned canvas (region masking happens separately).
   const aligned = document.createElement('canvas');
   aligned.width = W; aligned.height = H;
   const actx = aligned.getContext('2d');
   actx.fillStyle = '#000';
   actx.fillRect(0, 0, W, H);
   for (const [a, b, c] of state.collTriangles) {
-    if (!triangleAllowed(a, b, c)) continue;
     warpTriangleDraw(actx, src, [srcLms[a], srcLms[b], srcLms[c]], [canon[a], canon[b], canon[c]]);
   }
-  // Build a binary alpha mask (1 wherever ANY allowed triangle covers the pixel).
-  const maskCv = document.createElement('canvas');
-  maskCv.width = W; maskCv.height = H;
-  const mctx = maskCv.getContext('2d');
-  mctx.fillStyle = '#000';
-  mctx.fillRect(0, 0, W, H);
-  mctx.fillStyle = '#fff';
-  for (const [a, b, c] of state.collTriangles) {
-    if (!triangleAllowed(a, b, c)) continue;
-    mctx.beginPath();
-    mctx.moveTo(canon[a][0], canon[a][1]);
-    mctx.lineTo(canon[b][0], canon[b][1]);
-    mctx.lineTo(canon[c][0], canon[c][1]);
-    mctx.closePath();
-    mctx.fill();
-  }
-  const maskRGBA = mctx.getImageData(0, 0, W, H).data;
-  const mask = new Uint8Array(W * H);
-  for (let i = 0, p = 0; i < W * H; i++, p += 4) {
-    mask[i] = maskRGBA[p] > 127 ? 1 : 0;
-  }
+  // Build a smooth region mask using canonical-positioned polygons + optional Gaussian feather.
+  const mask = buildCollectiveRegionMask(W, H, canon, state.collCaptureRegion, state.collFeatherPx);
   // Snapshot the warped pixels.
   const pixels = new Uint8ClampedArray(actx.getImageData(0, 0, W, H).data);
   // Push to capture list.
@@ -13555,11 +13618,14 @@ function recomputeCompositeAtStep(limit) {
     const w = c.weight;
     const px = c.pixels, mk = c.mask;
     for (let i = 0, p = 0; i < N; i++, p += 4) {
-      if (!mk[i]) continue;
-      sumR[i] += px[p    ] * w;
-      sumG[i] += px[p + 1] * w;
-      sumB[i] += px[p + 2] * w;
-      sumW[i] += w;
+      const m = mk[i];
+      if (!m) continue;
+      // Mask is 0–255 representing region strength (smooth at feathered edges).
+      const cw = w * (m / 255);
+      sumR[i] += px[p    ] * cw;
+      sumG[i] += px[p + 1] * cw;
+      sumB[i] += px[p + 2] * cw;
+      sumW[i] += cw;
     }
   }
   const out = new Float32Array(N * 4);
