@@ -985,6 +985,13 @@
           </div>
           <div class="hint" id="faceStatus" style="margin-bottom: 12px;">Click <em>Start</em> to load the face mesh + hand tracking models (~12 MB, one-time).</div>
 
+          <label class="field">Renderer</label>
+          <div class="toggle" id="face-renderer" style="margin-bottom: 6px;">
+            <button data-r="canvas" class="on">Canvas 2D</button>
+            <button data-r="webgl">WebGL 3D</button>
+          </div>
+          <div class="hint" id="face-renderer-hint" style="margin-bottom: 12px;"><strong>Canvas 2D</strong> warps in image space. Fast, looks great for lateral pinches. Z gain produces a radial puff. <strong>WebGL 3D</strong> uses a true perspective projection: tight pinches push vertices forward and the perspective divide makes pulled-forward features appear larger with parallax. Heavier on GPU.</div>
+
           <label class="field">Max faces (1–5)</label>
           <input type="number" id="faceMaxFaces" min="1" max="5" value="1" />
           <div class="hint" style="margin-bottom: 10px;">Each face gets its own delta storage; pinches snap to whichever face is nearest. Costs ~1.5× per extra face.</div>
@@ -2459,7 +2466,9 @@ const state = {
   faceSmoothing: 0.5,             // 0 = no smoothing, 0.95 = very laggy
   faceMaxFaces: 1,                // 1–5 simultaneous faces
   faceFeature: 'free',            // 'free' | 'eye' | 'nose' | 'mouth' | 'cheek' | 'eyebrow'
-  faceZGain: 0,                   // pinch-tightness → radial bloom (pseudo-3D)
+  faceZGain: 0,                   // pinch-tightness → radial bloom (2D) or forward push (WebGL)
+  faceRenderer: 'canvas',         // 'canvas' (2D triangle warp) | 'webgl' (true 3D perspective)
+  faceWebGL: null,                // WebGL handle { gl, program, canvas, uniforms, buffers, tex }
   faceShowMesh: false,
   faceShowSkel: false,
   faceShowCam: true,
@@ -11493,8 +11502,21 @@ $('#faceRes').addEventListener('input', e => {
 });
 $('#faceReset').addEventListener('click', () => {
   for (const s of state.faceSlots) {
-    if (s) s.deltas.fill(0);
+    if (s) {
+      s.deltas.fill(0);
+      if (s.deltasZ) s.deltasZ.fill(0);
+    }
   }
+});
+$$('#face-renderer button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('#face-renderer button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    state.faceRenderer = btn.dataset.r;
+    // Switching renderer leaves the deltas alone — Canvas2D ignores deltasZ;
+    // WebGL applies both xy and z. Z gain has different visual meaning so the
+    // hint stays the same single line.
+  });
 });
 $('#faceSave').addEventListener('click', () => {
   if (!state.faceLastImg) { alert('Nothing to save yet — start face tracking first.'); return; }
@@ -12574,6 +12596,7 @@ function stopFace() {
   }
   if (state.faceMeshDet) { try { state.faceMeshDet.close(); } catch(_){} state.faceMeshDet = null; }
   if (state.faceHandsDet) { try { state.faceHandsDet.close(); } catch(_){} state.faceHandsDet = null; }
+  destroyFaceWebGL();
   const a = document.getElementById('faceStart');
   const b = document.getElementById('faceStop');
   if (a) a.disabled = false;
@@ -12639,6 +12662,7 @@ function ensureFaceSlot(slotIdx, lmCount) {
     s = state.faceSlots[slotIdx] = {
       smoothed: new Array(lmCount).fill(0).map(() => ({ x: 0.5, y: 0.5, z: 0 })),
       deltas: new Float32Array(lmCount * 2),
+      deltasZ: new Float32Array(lmCount),    // WebGL z displacement (face-local, additive)
       axisU: [1, 0], axisV: [0, 1],
       scale: 1, centroid: [0, 0], minZ: 0, zRange: 1,
       _initialized: false,
@@ -12761,9 +12785,13 @@ function onFaceFrameUpdate() {
         if (prev.active && moved > 0.5) {
           paintFaceDeltas(slot, W, H, prev.x, prev.y, dx, dy);
         }
-        // Per-frame radial bloom proportional to pinch tightness (pseudo-3D push).
+        // Z effect: bloom in Canvas2D mode, true forward push in WebGL mode.
         if (state.faceZGain > 0 && tight > 0) {
-          applyZBloom(slot, W, H, midX, midY, tight);
+          if (state.faceRenderer === 'webgl') {
+            applyZPushReal(slot, W, H, midX, midY, tight);
+          } else {
+            applyZBloom(slot, W, H, midX, midY, tight);
+          }
         }
       }
     }
@@ -12832,6 +12860,217 @@ function applyZBloom(slot, W, H, cx, cy, tightness) {
   }
 }
 
+// True forward z push: tight pinch → vertices move toward camera (negative z in MediaPipe convention).
+// Used only in the WebGL renderer; in Canvas2D mode the radial bloom version applies instead.
+function applyZPushReal(slot, W, H, cx, cy, tightness) {
+  if (!slot.deltasZ) slot.deltasZ = new Float32Array(slot.smoothed.length);
+  const brushPx = state.faceBrushPct * slot.scale;
+  const sigma = brushPx * clamp(state.faceSoft, 0.2, 1.0);
+  const sigma2 = sigma * sigma * 2;
+  const allowed = FACE_FEATURE_GROUPS[state.faceFeature];
+  const pushMag = -tightness * state.faceZGain * 0.014;  // negative z = toward camera in MediaPipe convention
+  for (let i = 0; i < slot.smoothed.length; i++) {
+    if (allowed && !allowed.has(i)) continue;
+    const lx = lmScreenX(slot.smoothed[i], W);
+    const ly = slot.smoothed[i].y * H;
+    const ox = lx - cx, oy = ly - cy;
+    const d2 = ox * ox + oy * oy;
+    if (d2 > brushPx * brushPx) continue;
+    const w = Math.exp(-d2 / sigma2);
+    slot.deltasZ[i] += pushMag * w;
+  }
+}
+
+// === WebGL 3D renderer ===
+
+const FACE_VS = `
+  attribute vec3 a_pos;       // landmark (x, y in [0,1] screen-normalized, z = MediaPipe z + delta)
+  attribute vec2 a_uv;        // texture sample coord = original tracked landmark position
+  uniform float u_z_gain;     // controls strength of perspective divide on z
+  varying vec2 v_uv;
+  void main() {
+    // Compute "effective z" — small magnitude (MediaPipe ~ ±0.05, ours can reach ~0.7).
+    float z = a_pos.z * u_z_gain;
+    // Perspective divide: closer (z<0) means scale > 1, vertex appears further from center.
+    vec2 centered = a_pos.xy - 0.5;
+    float scale = 1.0 / max(1.0 + z, 0.05);   // clamp to avoid singularity
+    vec2 scaled = centered * scale + 0.5;
+    // Map [0,1] → clip [-1,1], and flip y (canvas top-down vs clip bottom-up).
+    vec2 clip = scaled * 2.0 - 1.0;
+    gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+    v_uv = a_uv;
+  }
+`;
+
+const FACE_FS = `
+  precision mediump float;
+  varying vec2 v_uv;
+  uniform sampler2D u_tex;
+  void main() {
+    gl_FragColor = texture2D(u_tex, v_uv);
+  }
+`;
+
+function compileFaceShader(gl, type, source) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, source);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const msg = gl.getShaderInfoLog(s);
+    gl.deleteShader(s);
+    throw new Error('Face shader compile error: ' + msg);
+  }
+  return s;
+}
+
+function initFaceWebGL() {
+  if (state.faceWebGL) return state.faceWebGL;
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, premultipliedAlpha: false, antialias: true });
+  if (!gl) {
+    console.warn('WebGL unavailable; falling back to Canvas 2D.');
+    return null;
+  }
+  let vs, fs, program;
+  try {
+    vs = compileFaceShader(gl, gl.VERTEX_SHADER, FACE_VS);
+    fs = compileFaceShader(gl, gl.FRAGMENT_SHADER, FACE_FS);
+    program = gl.createProgram();
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      console.error('Face program link error:', gl.getProgramInfoLog(program));
+      return null;
+    }
+  } catch (err) {
+    console.error(err);
+    return null;
+  }
+  const handle = {
+    canvas, gl, program,
+    aPos: gl.getAttribLocation(program, 'a_pos'),
+    aUv: gl.getAttribLocation(program, 'a_uv'),
+    uZGain: gl.getUniformLocation(program, 'u_z_gain'),
+    uTex: gl.getUniformLocation(program, 'u_tex'),
+    bufPos: gl.createBuffer(),
+    bufUv: gl.createBuffer(),
+    bufIdx: gl.createBuffer(),
+    tex: gl.createTexture(),
+  };
+  gl.bindTexture(gl.TEXTURE_2D, handle.tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  state.faceWebGL = handle;
+  return handle;
+}
+
+function destroyFaceWebGL() {
+  if (!state.faceWebGL) return;
+  const h = state.faceWebGL;
+  try {
+    h.gl.deleteBuffer(h.bufPos);
+    h.gl.deleteBuffer(h.bufUv);
+    h.gl.deleteBuffer(h.bufIdx);
+    h.gl.deleteTexture(h.tex);
+    h.gl.deleteProgram(h.program);
+    const ext = h.gl.getExtension('WEBGL_lose_context');
+    if (ext) ext.loseContext();
+  } catch (_) {}
+  state.faceWebGL = null;
+}
+
+// Render the deformed face mesh to a transparent WebGL canvas, perspective-projected.
+// Returns the WebGL canvas (caller composites onto gray-canvas).
+function renderFaceWebGL(src, W, H, activeFaceCount) {
+  const h = initFaceWebGL();
+  if (!h || !window._Delaunator) return null;
+  const { gl, program, canvas } = h;
+  canvas.width = W;
+  canvas.height = H;
+  gl.viewport(0, 0, W, H);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.disable(gl.DEPTH_TEST);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+  gl.useProgram(program);
+
+  // Upload the camera frame as the texture (Canvas → 2D texture).
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, h.tex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+  gl.uniform1i(h.uTex, 0);
+  // The z gain controls how much MediaPipe z (and our delta-z) impacts the perspective divide.
+  gl.uniform1f(h.uZGain, 1.0 + state.faceZGain * 2.5);
+
+  for (let sIdx = 0; sIdx < activeFaceCount; sIdx++) {
+    const slot = state.faceSlots[sIdx];
+    if (!slot) continue;
+    const N = slot.smoothed.length;
+    const positions = new Float32Array(N * 3);
+    const uvs = new Float32Array(N * 2);
+    const flatXY = new Float64Array(N * 2);
+    for (let i = 0; i < N; i++) {
+      const lm = slot.smoothed[i];
+      const lmx = state.faceMirror ? lm.x : 1 - lm.x;
+      // Apply XY delta in face-local coords, rotated back into screen-relative coords.
+      const du = slot.deltas[i * 2], dv = slot.deltas[i * 2 + 1];
+      const dx = du * slot.axisU[0] + dv * slot.axisV[0];
+      const dy = du * slot.axisU[1] + dv * slot.axisV[1];
+      const px = lmx + dx * (slot.scale / W);   // back to landmark-normalized space
+      const py = lm.y + dy * (slot.scale / H);
+      const pz = lm.z + (slot.deltasZ ? slot.deltasZ[i] : 0);
+      positions[i * 3    ] = px;
+      positions[i * 3 + 1] = py;
+      positions[i * 3 + 2] = pz;
+      // UV = original tracked (un-deformed) landmark position. The texture is the camera frame.
+      uvs[i * 2    ] = lmx;
+      uvs[i * 2 + 1] = lm.y;
+      flatXY[i * 2    ] = lmx * W;
+      flatXY[i * 2 + 1] = lm.y * H;
+    }
+    let d;
+    try { d = new window._Delaunator(flatXY); } catch (_) { continue; }
+    const tri = d.triangles;
+    const maxEdge = slot.scale * 0.35;
+    const maxEdge2 = maxEdge * maxEdge;
+    const indices = [];
+    for (let t = 0; t < tri.length; t += 3) {
+      const a = tri[t], b = tri[t + 1], c = tri[t + 2];
+      const ax = flatXY[a * 2], ay = flatXY[a * 2 + 1];
+      const bx = flatXY[b * 2], by = flatXY[b * 2 + 1];
+      const cx = flatXY[c * 2], cy = flatXY[c * 2 + 1];
+      const ab2 = (ax-bx)**2 + (ay-by)**2;
+      const bc2 = (bx-cx)**2 + (by-cy)**2;
+      const ca2 = (cx-ax)**2 + (cy-ay)**2;
+      if (ab2 > maxEdge2 || bc2 > maxEdge2 || ca2 > maxEdge2) continue;
+      indices.push(a, b, c);
+    }
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, h.bufPos);
+    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(h.aPos);
+    gl.vertexAttribPointer(h.aPos, 3, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, h.bufUv);
+    gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(h.aUv);
+    gl.vertexAttribPointer(h.aUv, 2, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, h.bufIdx);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.DYNAMIC_DRAW);
+
+    gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT, 0);
+  }
+  gl.flush();
+  return canvas;
+}
+
 function drawFaceCanvas(src, W, H, pinches, activeFaceCount) {
   const cv = document.getElementById('gray-canvas');
   if (!cv) return;
@@ -12839,7 +13078,12 @@ function drawFaceCanvas(src, W, H, pinches, activeFaceCount) {
   const ctx = cv.getContext('2d');
   ctx.drawImage(src, 0, 0);
 
-  // For each ACTIVE face slot (one this frame), triangulate and warp.
+  // WebGL 3D path: render the deformed mesh through perspective projection.
+  if (state.faceRenderer === 'webgl') {
+    const glCanvas = renderFaceWebGL(src, W, H, activeFaceCount);
+    if (glCanvas) ctx.drawImage(glCanvas, 0, 0);
+  } else
+  // Canvas2D path: per-triangle affine warp.
   if (window._Delaunator) {
     for (let sIdx = 0; sIdx < activeFaceCount; sIdx++) {
       const slot = state.faceSlots[sIdx];
