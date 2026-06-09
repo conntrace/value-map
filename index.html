@@ -586,6 +586,7 @@
           <button data-mode="relief">Relief</button>
           <button data-mode="difference">Difference</button>
           <button data-mode="hands">Hands</button>
+          <button data-mode="face">Face stretch</button>
         </div>
 
         <div id="mode-values">
@@ -936,12 +937,6 @@
             <div class="hint">0 = clean live feed. Higher = previous frames leave ghost trails over the current frame. Combine high trails + high distortion for "everything past has happened" painterly buildup.</div>
           </div>
 
-          <label class="field" style="margin-top: 4px;">Gesture controls</label>
-          <div style="margin-bottom: 6px;">
-            <label style="font-size:11px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="handsGesturesOn" checked /> Enable gestures (closed fist → save · open palm → reset · 👍 → next mode)</label>
-          </div>
-          <div class="hint" style="margin-bottom: 12px;">Hold the gesture clearly for ~⅙ sec. A 1-second cooldown prevents accidental re-trigger. Pinching disables gesture detection so they don't conflict with grab/drag.</div>
-
           <label class="field">Brush radius</label>
           <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
             <input type="range" id="handsBrushR" min="20" max="240" value="90" style="width:140px;" />
@@ -979,6 +974,60 @@
             <button id="handsSave" class="btn ghost" style="font-size: 11px; flex:1;">Save warped image</button>
           </div>
           <div class="hint">Reset restores the original. Save downloads the current warped frame.</div>
+        </div>
+
+        <div id="mode-face" style="display: none;">
+          <div class="hint" style="margin-bottom: 10px;">Track 468 nodes on your face and warp them with your hand. Distortions are stored relative to the face — when you move your head, the deformation moves with it.</div>
+
+          <div style="display:flex; gap:6px; margin-bottom: 6px;">
+            <button id="faceStart" class="btn ghost" style="font-size: 11px; flex:1;">Start face tracking</button>
+            <button id="faceStop" class="btn ghost" style="font-size: 11px; flex:1;" disabled>Stop</button>
+          </div>
+          <div class="hint" id="faceStatus" style="margin-bottom: 12px;">Click <em>Start</em> to load the face mesh + hand tracking models (~12 MB, one-time).</div>
+
+          <label class="field">Brush radius (face-relative)</label>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
+            <input type="range" id="faceBrushR" min="5" max="40" value="18" style="width:140px;" />
+            <span id="faceBrushRVal">18</span> % of face width
+          </div>
+
+          <label class="field">Brush softness</label>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
+            <input type="range" id="faceSoft" min="20" max="100" value="55" style="width:140px;" />
+            <span id="faceSoftVal">0.55</span>
+          </div>
+
+          <label class="field">3D depth weight</label>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
+            <input type="range" id="faceDepth" min="0" max="100" value="50" style="width:140px;" />
+            <span id="faceDepthVal">0.50</span>
+          </div>
+          <div class="hint" style="margin-bottom: 10px;">0 = all landmarks equally pinchable. Higher = forward-facing features (nose, lips) deform more; deep features (jawline, ears) deform less. Adds a pseudo-3D feel.</div>
+
+          <label class="field">Pinch threshold</label>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
+            <input type="range" id="facePinch" min="3" max="12" value="6" style="width:140px;" />
+            <span id="facePinchVal">6</span>%
+          </div>
+
+          <label class="field">Overlay</label>
+          <div style="margin-bottom: 10px;">
+            <label style="font-size:11px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="faceShowMesh" /> Show face mesh nodes</label>
+            <label style="font-size:11px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="faceShowSkel" /> Show hand skeleton</label>
+            <label style="font-size:11px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="faceShowCam" checked /> Show mini camera preview</label>
+            <label style="font-size:11px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="faceMirror" checked /> Mirror camera (selfie view)</label>
+          </div>
+
+          <label class="field">Resolution (px width)</label>
+          <input type="number" id="faceRes" min="240" max="960" value="480" />
+          <div class="hint" style="margin-bottom: 12px;">Triangle warp is the costly part. 480 ≈ 20 fps on a mid laptop. Drop to 360 if it stutters.</div>
+
+          <label class="field" style="margin-top: 4px;">Actions</label>
+          <div style="display:flex; gap:6px; margin-bottom: 4px;">
+            <button id="faceReset" class="btn ghost" style="font-size: 11px; flex:1;">Reset distortions</button>
+            <button id="faceSave" class="btn ghost" style="font-size: 11px; flex:1;">Save current frame</button>
+          </div>
+          <div class="hint">Reset wipes all face-relative deltas back to zero. Save downloads the current warped PNG.</div>
         </div>
 
         <div id="mode-riso" style="display: none;">
@@ -2372,16 +2421,30 @@ const state = {
   // Live-feed mode: motion trails (per-frame blend with previous displayed frame)
   handsTrailDecay: 0,             // 0–0.99; how much of last frame to keep
   handsTrailBuf: null,            // Uint8ClampedArray of last displayed frame
-  // Gestures (fist=save, palm=reset, thumbs-up=cycle modes)
-  handsGesturesOn: true,
-  handsGesture: {
-    candidate: null,
-    candidateFrames: 0,
-    cooldownUntil: 0,
-    frameCount: 0,
-    flash: null,
-    flashUntil: 0,
+
+  // Face stretch — landmark-anchored mesh deformation
+  faceBrushPct: 0.18,             // brush radius as fraction of face width
+  faceSoft: 0.55,
+  faceDepthWeight: 0.5,           // 0–1; multiplier for z-based displacement
+  facePinchPct: 0.06,
+  faceShowMesh: false,
+  faceShowSkel: false,
+  faceShowCam: true,
+  faceMirror: true,
+  faceRes: 480,
+  faceStream: null,
+  faceVideo: null,
+  faceMeshDet: null,              // MediaPipe FaceMesh instance
+  faceHandsDet: null,             // MediaPipe Hands instance (independent of Hands mode's detector)
+  faceRAF: 0,
+  faceLandmarks: null,            // last frame's face landmarks (normalized 0-1, with z)
+  faceHandLandmarks: null,        // last frame's hand landmarks
+  faceDeltas: null,               // Float32Array(468 * 2) per-landmark offset in face-normalized coords
+  facePinchState: {               // last seen pinch state per hand
+    0: { active: false, x: 0, y: 0 },
+    1: { active: false, x: 0, y: 0 },
   },
+  faceLastImg: null,              // last rendered Uint8ClampedArray (for save)
 
   // Layers — value-quantized stack for layered paper sculpture
   layLevels: 5,
@@ -9235,12 +9298,16 @@ $$('#mode button').forEach(btn => {
     $('#mode-relief').style.display = state.mode === 'relief' ? '' : 'none';
     $('#mode-difference').style.display = state.mode === 'difference' ? '' : 'none';
     $('#mode-hands').style.display = state.mode === 'hands' ? '' : 'none';
-    // Difference + Hands own live MediaStreams + RAF loops; stop them when leaving.
+    $('#mode-face').style.display = state.mode === 'face' ? '' : 'none';
+    // Difference + Hands + Face own live MediaStreams + RAF loops; stop them when leaving.
     if (state.mode !== 'difference') {
       stopDifferenceCamera();
     }
     if (state.mode !== 'hands') {
       stopHands();
+    }
+    if (state.mode !== 'face') {
+      stopFace();
     }
     autoGenerateDebounced();
   });
@@ -11305,9 +11372,6 @@ $('#handsTrail').addEventListener('input', e => {
   state.handsTrailDecay = clamp((parseInt(e.target.value, 10) || 0) / 100, 0, 0.99);
   $('#handsTrailVal').textContent = state.handsTrailDecay.toFixed(2);
 });
-$('#handsGesturesOn').addEventListener('change', e => {
-  state.handsGesturesOn = e.target.checked;
-});
 $('#handsBrushR').addEventListener('input', e => {
   state.handsBrushR = clamp(parseInt(e.target.value, 10) || 90, 20, 240);
   $('#handsBrushRVal').textContent = state.handsBrushR;
@@ -11347,6 +11411,44 @@ $('#handsSave').addEventListener('click', () => {
   cv.width = w; cv.height = h;
   cv.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(data), w, h), 0, 0);
   downloadCanvas(cv, `hands-warp_${w}x${h}.png`);
+});
+
+/* Face stretch wiring */
+$('#faceStart').addEventListener('click', startFace);
+$('#faceStop').addEventListener('click', () => { stopFace(); setFaceStatus('Stopped.'); });
+$('#faceBrushR').addEventListener('input', e => {
+  state.faceBrushPct = clamp((parseInt(e.target.value, 10) || 18) / 100, 0.05, 0.40);
+  $('#faceBrushRVal').textContent = (state.faceBrushPct * 100).toFixed(0);
+});
+$('#faceSoft').addEventListener('input', e => {
+  state.faceSoft = clamp((parseInt(e.target.value, 10) || 55) / 100, 0.2, 1.0);
+  $('#faceSoftVal').textContent = state.faceSoft.toFixed(2);
+});
+$('#faceDepth').addEventListener('input', e => {
+  state.faceDepthWeight = clamp((parseInt(e.target.value, 10) || 0) / 100, 0, 1);
+  $('#faceDepthVal').textContent = state.faceDepthWeight.toFixed(2);
+});
+$('#facePinch').addEventListener('input', e => {
+  state.facePinchPct = clamp((parseInt(e.target.value, 10) || 6) / 100, 0.03, 0.12);
+  $('#facePinchVal').textContent = (state.facePinchPct * 100).toFixed(0);
+});
+$('#faceShowMesh').addEventListener('change', e => { state.faceShowMesh = e.target.checked; });
+$('#faceShowSkel').addEventListener('change', e => { state.faceShowSkel = e.target.checked; });
+$('#faceShowCam').addEventListener('change', e => { state.faceShowCam = e.target.checked; });
+$('#faceMirror').addEventListener('change', e => { state.faceMirror = e.target.checked; });
+$('#faceRes').addEventListener('input', e => {
+  state.faceRes = clamp(parseInt(e.target.value, 10) || 480, 240, 960);
+});
+$('#faceReset').addEventListener('click', () => {
+  if (state.faceDeltas) state.faceDeltas.fill(0);
+});
+$('#faceSave').addEventListener('click', () => {
+  if (!state.faceLastImg) { alert('Nothing to save yet — start face tracking first.'); return; }
+  const img = state.faceLastImg;
+  const cv = document.createElement('canvas');
+  cv.width = img.width; cv.height = img.height;
+  cv.getContext('2d').putImageData(img, 0, 0);
+  downloadCanvas(cv, `face-warp_${img.width}x${img.height}.png`);
 });
 
 /* K-means palette extraction in OKLab */
@@ -12103,11 +12205,6 @@ function onHandsResults(results) {
       twoHandStretch(state.handsImg, pinches[0], pinches[1]);
     }
   }
-  // Gestures — run on the FIRST detected hand only so the user can mirror with one hand.
-  if (state.handsGesturesOn && lms.length > 0) {
-    const fired = updateGestureState(lms[0]);
-    if (fired) fireHandsGesture(fired);
-  }
   renderHandsCanvas(pinches);
 }
 
@@ -12124,93 +12221,6 @@ function twoHandFieldStretch(W, H, p0, p1) {
   paintField(state.handsField, W, H, p1.x, p1.y,  ux * pullStrength,  uy * pullStrength, R * 0.6, state.handsSoft);
 }
 
-// --- Gesture detection ---
-// MediaPipe landmark indices:
-// 0 wrist · 1-4 thumb (CMC→tip) · 5-8 index · 9-12 middle · 13-16 ring · 17-20 pinky
-function _handDist(hand, a, b) {
-  return Math.hypot(hand[a].x - hand[b].x, hand[a].y - hand[b].y);
-}
-function _fingerExtended(hand, tip, mid) {
-  // Tip should be farther from the wrist than the mid-joint.
-  return _handDist(hand, tip, 0) > _handDist(hand, mid, 0) * 1.05;
-}
-function _isFist(hand) {
-  return !_fingerExtended(hand, 8, 6) &&
-         !_fingerExtended(hand, 12, 10) &&
-         !_fingerExtended(hand, 16, 14) &&
-         !_fingerExtended(hand, 20, 18);
-}
-function _isOpenPalm(hand) {
-  return _fingerExtended(hand, 8, 6) &&
-         _fingerExtended(hand, 12, 10) &&
-         _fingerExtended(hand, 16, 14) &&
-         _fingerExtended(hand, 20, 18);
-}
-function _isThumbsUp(hand) {
-  const thumbExt = _handDist(hand, 4, 0) > _handDist(hand, 2, 0) * 1.1;
-  const othersCurled = !_fingerExtended(hand, 8, 6) &&
-                       !_fingerExtended(hand, 12, 10) &&
-                       !_fingerExtended(hand, 16, 14) &&
-                       !_fingerExtended(hand, 20, 18);
-  // Thumb tip should sit above index tip in the (camera) frame (smaller y = up).
-  const thumbAbove = hand[4].y < hand[8].y - 0.05;
-  return thumbExt && othersCurled && thumbAbove;
-}
-function detectGesture(hand) {
-  // Don't interpret gestures while the user is pinching (avoids conflict with grab/drag).
-  if (_handDist(hand, 4, 8) < state.handsPinchPct) return null;
-  if (_isFist(hand)) return 'fist';
-  if (_isThumbsUp(hand)) return 'thumbs-up';   // check before palm — thumbs-up has thumb out, palm has all out
-  if (_isOpenPalm(hand)) return 'palm';
-  return null;
-}
-
-function updateGestureState(hand) {
-  const G = state.handsGesture;
-  G.frameCount++;
-  if (G.frameCount < G.cooldownUntil) return null;
-  const g = detectGesture(hand);
-  if (g && g === G.candidate) {
-    G.candidateFrames++;
-  } else {
-    G.candidate = g;
-    G.candidateFrames = g ? 1 : 0;
-  }
-  if (g && G.candidateFrames >= 5) {       // ~⅙ second @ 30fps
-    G.cooldownUntil = G.frameCount + 30;   // 1-second cooldown
-    G.candidate = null;
-    G.candidateFrames = 0;
-    return g;
-  }
-  return null;
-}
-
-function fireHandsGesture(g) {
-  if (g === 'fist') {
-    document.getElementById('handsSave').click();
-    flashHandsMessage('SAVED');
-  } else if (g === 'palm') {
-    document.getElementById('handsReset').click();
-    flashHandsMessage('RESET');
-  } else if (g === 'thumbs-up') {
-    cycleToNextMode();
-  }
-}
-
-function cycleToNextMode() {
-  const buttons = Array.from(document.querySelectorAll('[data-mode]'));
-  const idx = buttons.findIndex(b => b.dataset.mode === state.mode);
-  if (idx < 0 || buttons.length === 0) return;
-  const next = buttons[(idx + 1) % buttons.length];
-  flashHandsMessage(`→ ${next.textContent}`);
-  // Tiny delay so the user sees the flash before the mode switches and stops the camera.
-  setTimeout(() => next.click(), 300);
-}
-
-function flashHandsMessage(msg) {
-  state.handsGesture.flash = msg;
-  state.handsGesture.flashUntil = state.handsGesture.frameCount + 45; // ~1.5s
-}
 
 // Re-route the pinch-drag for live-feed mode: instead of mutating pixels,
 // we paint into the persistent displacement field. The render loop applies
@@ -12385,31 +12395,388 @@ function renderHandsCanvas(pinches) {
       ctx.restore();
     }
   }
-  // Gesture flash overlay.
-  const G = state.handsGesture;
-  if (G.flash && G.frameCount < G.flashUntil) {
-    const msg = G.flash;
-    ctx.save();
-    ctx.font = 'bold 42px system-ui, -apple-system, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const tw = ctx.measureText(msg).width;
-    const pad = 22;
-    const bw = tw + pad * 2;
-    const bh = 64;
-    const bx = img.w / 2 - bw / 2;
-    const by = img.h / 2 - bh / 2;
-    ctx.fillStyle = 'rgba(0,0,0,0.65)';
-    ctx.fillRect(bx, by, bw, bh);
-    ctx.strokeStyle = 'rgba(255,210,80,0.9)';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(bx, by, bw, bh);
-    ctx.fillStyle = 'rgba(255,225,120,1)';
-    ctx.fillText(msg, img.w / 2, img.h / 2);
-    ctx.restore();
-  } else {
-    G.flash = null;
+}
+
+// ============================================================
+// Face stretch — landmark-anchored face mesh deformation.
+// Runs MediaPipe Face Mesh + Hands simultaneously. Pinch with
+// your fingers, drag, and the face landmarks move. Distortions
+// are stored relative to the face so head movement preserves
+// the deformation.
+// ============================================================
+
+const FACEMESH_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/';
+const DELAUNATOR_CDN = 'https://cdn.skypack.dev/delaunator';
+
+function setFaceStatus(msg) {
+  const el = document.getElementById('faceStatus');
+  if (el) el.textContent = msg;
+}
+
+async function loadScript(url) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = url;
+    s.crossOrigin = 'anonymous';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Script load failed: ' + url));
+    document.head.appendChild(s);
+  });
+}
+
+async function ensureFaceMeshLoaded() {
+  if (!window.FaceMesh) {
+    setFaceStatus('Loading face mesh model…');
+    await loadScript(FACEMESH_CDN + 'face_mesh.js');
   }
+  if (!window.Hands) {
+    setFaceStatus('Loading hand tracking model…');
+    await loadScript(MEDIAPIPE_HANDS_CDN + 'hands.js');
+  }
+  if (!window._Delaunator) {
+    setFaceStatus('Loading triangulator…');
+    // Delaunator is ESM-only; import dynamically.
+    const mod = await import(/* @vite-ignore */ DELAUNATOR_CDN);
+    window._Delaunator = mod.default;
+  }
+}
+
+async function startFace() {
+  if (state.faceStream) return;
+  try {
+    await ensureFaceMeshLoaded();
+  } catch (err) {
+    setFaceStatus(err.message);
+    return;
+  }
+  setFaceStatus('Requesting camera permission…');
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setFaceStatus('This browser does not expose getUserMedia.');
+    return;
+  }
+  try {
+    state.faceStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+      audio: false,
+    });
+  } catch (err) {
+    setFaceStatus('Camera permission denied. ' + err.message);
+    return;
+  }
+  const video = document.createElement('video');
+  video.autoplay = true;
+  video.playsInline = true;
+  video.muted = true;
+  video.srcObject = state.faceStream;
+  await new Promise(res => { video.onloadedmetadata = () => video.play().then(res, res); });
+  state.faceVideo = video;
+  // Build face mesh detector
+  const fm = new window.FaceMesh({ locateFile: f => FACEMESH_CDN + f });
+  fm.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: true,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5,
+    selfieMode: true,
+  });
+  fm.onResults(results => {
+    state.faceLandmarks = (results.multiFaceLandmarks && results.multiFaceLandmarks[0]) || null;
+  });
+  state.faceMeshDet = fm;
+  // Build hand detector
+  const hd = new window.Hands({ locateFile: f => MEDIAPIPE_HANDS_CDN + f });
+  hd.setOptions({
+    maxNumHands: 2,
+    modelComplexity: 0,
+    minDetectionConfidence: 0.6,
+    minTrackingConfidence: 0.5,
+    selfieMode: true,
+  });
+  hd.onResults(results => {
+    state.faceHandLandmarks = results.multiHandLandmarks || [];
+    onFaceFrameUpdate();
+  });
+  state.faceHandsDet = hd;
+  state.faceDeltas = new Float32Array(478 * 2);   // refineLandmarks → 478 (468 + 10 iris)
+  state.facePinchState = {
+    0: { active: false, x: 0, y: 0 },
+    1: { active: false, x: 0, y: 0 },
+  };
+  $('#faceStart').disabled = true;
+  $('#faceStop').disabled = false;
+  setFaceStatus('Tracking. Pinch your face with thumb + index, then drag.');
+  faceLoop();
+}
+
+function stopFace() {
+  if (state.faceRAF) { cancelAnimationFrame(state.faceRAF); state.faceRAF = 0; }
+  if (state.faceStream) { state.faceStream.getTracks().forEach(t => t.stop()); state.faceStream = null; }
+  if (state.faceVideo) {
+    try { state.faceVideo.pause(); } catch (_) {}
+    state.faceVideo.srcObject = null;
+    state.faceVideo = null;
+  }
+  if (state.faceMeshDet) { try { state.faceMeshDet.close(); } catch(_){} state.faceMeshDet = null; }
+  if (state.faceHandsDet) { try { state.faceHandsDet.close(); } catch(_){} state.faceHandsDet = null; }
+  const a = document.getElementById('faceStart');
+  const b = document.getElementById('faceStop');
+  if (a) a.disabled = false;
+  if (b) b.disabled = true;
+}
+
+async function faceLoop() {
+  if (!state.faceVideo || !state.faceStream) return;
+  const v = state.faceVideo;
+  if (v.readyState >= 2 && state.faceMeshDet && state.faceHandsDet) {
+    try {
+      // Face first, then hands. onResults for Hands triggers the render.
+      await state.faceMeshDet.send({ image: v });
+      await state.faceHandsDet.send({ image: v });
+    } catch (_) {}
+  }
+  state.faceRAF = requestAnimationFrame(faceLoop);
+}
+
+// Called whenever new hand results arrive (≈ once per detection).
+function onFaceFrameUpdate() {
+  const v = state.faceVideo;
+  if (!v?.videoWidth) return;
+  const W = clamp(state.faceRes | 0, 240, 960);
+  const H = Math.round(W * v.videoHeight / v.videoWidth);
+
+  // Snapshot the camera frame into an offscreen canvas (mirrored if selfie view).
+  const src = document.createElement('canvas');
+  src.width = W; src.height = H;
+  const sctx = src.getContext('2d');
+  if (state.faceMirror) { sctx.translate(W, 0); sctx.scale(-1, 1); }
+  sctx.drawImage(v, 0, 0, W, H);
+
+  // If no face this frame, just show the live camera frame and return.
+  if (!state.faceLandmarks) {
+    drawFaceCanvas(src, W, H, null, null, null);
+    return;
+  }
+  // Compute face bbox + scale (in image pixels). Used for face-relative coords.
+  const lms = state.faceLandmarks;
+  let minX = 1, minY = 1, maxX = 0, maxY = 0, minZ = Infinity, maxZ = -Infinity;
+  for (const p of lms) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > minX && p.x > maxX) maxX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+    const z = p.z || 0;
+    if (z < minZ) minZ = z;
+    if (z > maxZ) maxZ = z;
+  }
+  const faceW = (maxX - minX) * W;
+  const faceH = (maxY - minY) * H;
+  const faceScale = Math.max(faceW, faceH);
+  const zRange = Math.max(1e-3, maxZ - minZ);
+
+  // Process pinch state and route to face deltas.
+  const hands = state.faceHandLandmarks || [];
+  const pinchThr = state.facePinchPct;
+  const pinches = [];
+  for (let i = 0; i < hands.length && i < 2; i++) {
+    const h = hands[i];
+    const t = h[4], idx = h[8];
+    const tx = state.faceMirror ? t.x : 1 - t.x;
+    const ix = state.faceMirror ? idx.x : 1 - idx.x;
+    const dist = Math.hypot(tx - ix, t.y - idx.y);
+    const active = dist < pinchThr;
+    const midX = ((tx + ix) / 2) * W;
+    const midY = ((t.y + idx.y) / 2) * H;
+    pinches.push({ x: midX, y: midY, active });
+    const prev = state.facePinchState[i] || { active: false, x: midX, y: midY };
+    if (active && prev.active) {
+      const dx = midX - prev.x;
+      const dy = midY - prev.y;
+      if (Math.hypot(dx, dy) > 0.5) {
+        paintFaceDeltas(W, H, prev.x, prev.y, dx, dy, faceScale, zRange, minZ);
+      }
+    }
+    state.facePinchState[i] = { active, x: midX, y: midY };
+  }
+  for (let i = hands.length; i < 2; i++) {
+    state.facePinchState[i] = { active: false, x: 0, y: 0 };
+  }
+  drawFaceCanvas(src, W, H, pinches, faceW, { minZ, zRange });
+}
+
+// Push displacement into per-landmark face-relative deltas based on a brush
+// drag around (cx, cy). Strength falls off by gaussian distance to each
+// landmark and (optionally) scales by landmark depth.
+function paintFaceDeltas(W, H, cx, cy, dx, dy, faceScale, zRange, zMin) {
+  const lms = state.faceLandmarks;
+  if (!lms || !state.faceDeltas) return;
+  const brushPx = state.faceBrushPct * faceScale;
+  const sigma = brushPx * clamp(state.faceSoft, 0.2, 1.0);
+  const sigma2 = sigma * sigma * 2;
+  const zw = state.faceDepthWeight;
+  // Convert the drag from image pixels into face-relative units.
+  const ndx = dx / faceScale, ndy = dy / faceScale;
+  for (let i = 0; i < lms.length; i++) {
+    const lx = lms[i].x * W, ly = lms[i].y * H;
+    const ox = lx - cx, oy = ly - cy;
+    const d2 = ox * ox + oy * oy;
+    if (d2 > brushPx * brushPx) continue;
+    const w = Math.exp(-d2 / sigma2);
+    // Depth modulation: forward features (smaller z in MediaPipe = closer to camera)
+    // get a stronger pinch. We map (z - zMin) / zRange to [0,1] and weight by zw.
+    const zNorm = (lms[i].z - zMin) / zRange;        // 0 = closest, 1 = farthest
+    const depthScale = 1 + zw * (1 - 2 * zNorm);      // 1+zw at closest, 1-zw at farthest
+    const ddx = ndx * w * depthScale;
+    const ddy = ndy * w * depthScale;
+    state.faceDeltas[i * 2    ] += ddx;
+    state.faceDeltas[i * 2 + 1] += ddy;
+  }
+}
+
+function drawFaceCanvas(src, W, H, pinches, faceScale, zInfo) {
+  const cv = document.getElementById('gray-canvas');
+  if (!cv) return;
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  // Background: the live camera frame.
+  ctx.drawImage(src, 0, 0);
+
+  // If face mesh available, triangulate and warp the face region.
+  const lms = state.faceLandmarks;
+  if (lms && state.faceDeltas && window._Delaunator) {
+    // Build tracked and deformed point arrays.
+    const N = lms.length;
+    const pts = new Array(N);
+    const def = new Array(N);
+    for (let i = 0; i < N; i++) {
+      const lx = lms[i].x * W, ly = lms[i].y * H;
+      pts[i] = [lx, ly];
+      def[i] = [lx + state.faceDeltas[i * 2] * faceScale, ly + state.faceDeltas[i * 2 + 1] * faceScale];
+    }
+    // Delaunay on the TRACKED points. Filter degenerate triangles by max edge.
+    const flat = new Float64Array(N * 2);
+    for (let i = 0; i < N; i++) { flat[i * 2] = pts[i][0]; flat[i * 2 + 1] = pts[i][1]; }
+    let d;
+    try { d = new window._Delaunator(flat); }
+    catch (_) { d = null; }
+    if (d) {
+      const tri = d.triangles;
+      const maxEdge2 = (faceScale * 0.35) * (faceScale * 0.35); // skip giant outer triangles
+      for (let t = 0; t < tri.length; t += 3) {
+        const a = tri[t], b = tri[t + 1], c = tri[t + 2];
+        const A = pts[a], B = pts[b], C = pts[c];
+        const ab2 = (A[0]-B[0])**2 + (A[1]-B[1])**2;
+        const bc2 = (B[0]-C[0])**2 + (B[1]-C[1])**2;
+        const ca2 = (C[0]-A[0])**2 + (C[1]-A[1])**2;
+        if (ab2 > maxEdge2 || bc2 > maxEdge2 || ca2 > maxEdge2) continue;
+        warpTriangleDraw(ctx, src, [A, B, C], [def[a], def[b], def[c]]);
+      }
+    }
+  }
+
+  // Face mesh dot overlay
+  if (state.faceShowMesh && lms) {
+    ctx.fillStyle = 'rgba(120, 220, 255, 0.55)';
+    for (let i = 0; i < lms.length; i++) {
+      const x = lms[i].x * W, y = lms[i].y * H;
+      const dx = state.faceDeltas ? state.faceDeltas[i*2] * faceScale : 0;
+      const dy = state.faceDeltas ? state.faceDeltas[i*2+1] * faceScale : 0;
+      ctx.beginPath();
+      ctx.arc(x + dx, y + dy, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  // Hand skeleton overlay
+  if (state.faceShowSkel && state.faceHandLandmarks) {
+    const HAND_LINES = [
+      [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
+      [5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],
+      [13,17],[17,18],[18,19],[19,20],[0,17],
+    ];
+    for (let hi = 0; hi < state.faceHandLandmarks.length; hi++) {
+      const hand = state.faceHandLandmarks[hi];
+      const isPinching = state.facePinchState[hi]?.active;
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = isPinching ? 'rgba(255, 80, 80, 0.95)' : 'rgba(120, 220, 255, 0.85)';
+      for (const [a, b] of HAND_LINES) {
+        const A = hand[a], B = hand[b];
+        const ax = (state.faceMirror ? A.x : 1 - A.x) * W;
+        const ay = A.y * H;
+        const bx = (state.faceMirror ? B.x : 1 - B.x) * W;
+        const by = B.y * H;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
+        ctx.stroke();
+      }
+    }
+  }
+  // Pinch halos
+  if (pinches) {
+    for (const p of pinches) {
+      if (!p.active) continue;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, (state.faceBrushPct * faceScale) || 30, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 200, 60, 0.85)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 200, 60, 0.95)';
+      ctx.fill();
+    }
+  }
+  // Mini camera preview
+  if (state.faceShowCam && state.faceVideo?.videoWidth) {
+    const v = state.faceVideo;
+    const cw = Math.min(180, Math.floor(W * 0.22));
+    const ch = Math.round(cw * v.videoHeight / v.videoWidth);
+    const cx = W - cw - 8;
+    const cy = 8;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(cx - 2, cy - 2, cw + 4, ch + 4);
+    if (state.faceMirror) {
+      ctx.translate(cx + cw, cy);
+      ctx.scale(-1, 1);
+      ctx.drawImage(v, 0, 0, cw, ch);
+    } else {
+      ctx.drawImage(v, cx, cy, cw, ch);
+    }
+    ctx.restore();
+  }
+  // Cache the rendered output for save.
+  state.faceLastImg = ctx.getImageData(0, 0, W, H);
+}
+
+// Affine triangle warp: maps the source triangle to the destination triangle
+// and draws the source canvas through that transform, clipped to the dest tri.
+function warpTriangleDraw(ctx, src, srcTri, dstTri) {
+  const [s1, s2, s3] = srcTri;
+  const [d1, d2, d3] = dstTri;
+  const dx21 = s2[0] - s1[0], dy21 = s2[1] - s1[1];
+  const dx31 = s3[0] - s1[0], dy31 = s3[1] - s1[1];
+  const det = dx21 * dy31 - dx31 * dy21;
+  if (Math.abs(det) < 1e-6) return;
+  const ex21 = d2[0] - d1[0], ey21 = d2[1] - d1[1];
+  const ex31 = d3[0] - d1[0], ey31 = d3[1] - d1[1];
+  const A = (ex21 * dy31 - ex31 * dy21) / det;
+  const B = (ex31 * dx21 - ex21 * dx31) / det;
+  const C = (ey21 * dy31 - ey31 * dy21) / det;
+  const D = (ey31 * dx21 - ey21 * dx31) / det;
+  const E = d1[0] - A * s1[0] - B * s1[1];
+  const F = d1[1] - C * s1[0] - D * s1[1];
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(d1[0], d1[1]);
+  ctx.lineTo(d2[0], d2[1]);
+  ctx.lineTo(d3[0], d3[1]);
+  ctx.closePath();
+  ctx.clip();
+  // Canvas2D matrix: x' = a*x + c*y + e ; y' = b*x + d*y + f
+  ctx.transform(A, C, B, D, E, F);
+  ctx.drawImage(src, 0, 0);
+  ctx.restore();
 }
 
 $('#export-gray').addEventListener('click', async () => {
