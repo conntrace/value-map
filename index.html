@@ -926,8 +926,21 @@
               <input type="range" id="handsDecay" min="0" max="60" value="0" style="width:140px;" />
               <span id="handsDecayVal">0</span>‰/frame
             </div>
-            <div class="hint">0 = distortions are permanent. Higher values heal the field back to neutral over time (a couple of seconds at 30).</div>
+            <div class="hint" style="margin-bottom: 10px;">0 = distortions are permanent. Higher values heal the field back to neutral over time (a couple of seconds at 30).</div>
+
+            <label class="field">Motion trails</label>
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom: 6px;">
+              <input type="range" id="handsTrail" min="0" max="99" value="0" style="width:140px;" />
+              <span id="handsTrailVal">0.00</span>
+            </div>
+            <div class="hint">0 = clean live feed. Higher = previous frames leave ghost trails over the current frame. Combine high trails + high distortion for "everything past has happened" painterly buildup.</div>
           </div>
+
+          <label class="field" style="margin-top: 4px;">Gesture controls</label>
+          <div style="margin-bottom: 6px;">
+            <label style="font-size:11px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="handsGesturesOn" checked /> Enable gestures (closed fist → save · open palm → reset · 👍 → next mode)</label>
+          </div>
+          <div class="hint" style="margin-bottom: 12px;">Hold the gesture clearly for ~⅙ sec. A 1-second cooldown prevents accidental re-trigger. Pinching disables gesture detection so they don't conflict with grab/drag.</div>
 
           <label class="field">Brush radius</label>
           <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
@@ -2356,6 +2369,19 @@ const state = {
   handsFieldW: 0,
   handsFieldH: 0,
   handsFieldDecay: 0,             // 0–0.06 (per-frame multiplicative decay toward zero)
+  // Live-feed mode: motion trails (per-frame blend with previous displayed frame)
+  handsTrailDecay: 0,             // 0–0.99; how much of last frame to keep
+  handsTrailBuf: null,            // Uint8ClampedArray of last displayed frame
+  // Gestures (fist=save, palm=reset, thumbs-up=cycle modes)
+  handsGesturesOn: true,
+  handsGesture: {
+    candidate: null,
+    candidateFrames: 0,
+    cooldownUntil: 0,
+    frameCount: 0,
+    flash: null,
+    flashUntil: 0,
+  },
 
   // Layers — value-quantized stack for layered paper sculpture
   layLevels: 5,
@@ -11275,6 +11301,13 @@ $('#handsDecay').addEventListener('input', e => {
   state.handsFieldDecay = clamp((parseInt(e.target.value, 10) || 0) / 1000, 0, 0.06);
   $('#handsDecayVal').textContent = (state.handsFieldDecay * 1000).toFixed(0);
 });
+$('#handsTrail').addEventListener('input', e => {
+  state.handsTrailDecay = clamp((parseInt(e.target.value, 10) || 0) / 100, 0, 0.99);
+  $('#handsTrailVal').textContent = state.handsTrailDecay.toFixed(2);
+});
+$('#handsGesturesOn').addEventListener('change', e => {
+  state.handsGesturesOn = e.target.checked;
+});
 $('#handsBrushR').addEventListener('input', e => {
   state.handsBrushR = clamp(parseInt(e.target.value, 10) || 90, 20, 240);
   $('#handsBrushRVal').textContent = state.handsBrushR;
@@ -11931,7 +11964,23 @@ async function handsLoop() {
       for (let i = 0; i < f.length; i++) f[i] *= keep;
     }
     // Apply field to live frame → produces the warped output.
-    const warped = applyDisplacementField(state.handsField, srcBuf, W, H);
+    let warped = applyDisplacementField(state.handsField, srcBuf, W, H);
+    // Motion trails: blend with the previously displayed frame.
+    if (state.handsTrailDecay > 0) {
+      const t = state.handsTrailDecay;
+      const inv = 1 - t;
+      const prev = state.handsTrailBuf;
+      if (prev && prev.length === warped.length) {
+        for (let i = 0; i < warped.length; i += 4) {
+          warped[i    ] = warped[i    ] * inv + prev[i    ] * t;
+          warped[i + 1] = warped[i + 1] * inv + prev[i + 1] * t;
+          warped[i + 2] = warped[i + 2] * inv + prev[i + 2] * t;
+        }
+      }
+      state.handsTrailBuf = new Uint8ClampedArray(warped);
+    } else {
+      state.handsTrailBuf = null;
+    }
     state.handsImg = { data: warped, w: W, h: H };
     // For Reset to make sense, we keep the most recent UNWARPED capture.
     state.handsOrig = { data: new Uint8ClampedArray(srcBuf), w: W, h: H };
@@ -12054,6 +12103,11 @@ function onHandsResults(results) {
       twoHandStretch(state.handsImg, pinches[0], pinches[1]);
     }
   }
+  // Gestures — run on the FIRST detected hand only so the user can mirror with one hand.
+  if (state.handsGesturesOn && lms.length > 0) {
+    const fired = updateGestureState(lms[0]);
+    if (fired) fireHandsGesture(fired);
+  }
   renderHandsCanvas(pinches);
 }
 
@@ -12068,6 +12122,94 @@ function twoHandFieldStretch(W, H, p0, p1) {
   const ux = lx / L, uy = ly / L;
   paintField(state.handsField, W, H, p0.x, p0.y, -ux * pullStrength, -uy * pullStrength, R * 0.6, state.handsSoft);
   paintField(state.handsField, W, H, p1.x, p1.y,  ux * pullStrength,  uy * pullStrength, R * 0.6, state.handsSoft);
+}
+
+// --- Gesture detection ---
+// MediaPipe landmark indices:
+// 0 wrist · 1-4 thumb (CMC→tip) · 5-8 index · 9-12 middle · 13-16 ring · 17-20 pinky
+function _handDist(hand, a, b) {
+  return Math.hypot(hand[a].x - hand[b].x, hand[a].y - hand[b].y);
+}
+function _fingerExtended(hand, tip, mid) {
+  // Tip should be farther from the wrist than the mid-joint.
+  return _handDist(hand, tip, 0) > _handDist(hand, mid, 0) * 1.05;
+}
+function _isFist(hand) {
+  return !_fingerExtended(hand, 8, 6) &&
+         !_fingerExtended(hand, 12, 10) &&
+         !_fingerExtended(hand, 16, 14) &&
+         !_fingerExtended(hand, 20, 18);
+}
+function _isOpenPalm(hand) {
+  return _fingerExtended(hand, 8, 6) &&
+         _fingerExtended(hand, 12, 10) &&
+         _fingerExtended(hand, 16, 14) &&
+         _fingerExtended(hand, 20, 18);
+}
+function _isThumbsUp(hand) {
+  const thumbExt = _handDist(hand, 4, 0) > _handDist(hand, 2, 0) * 1.1;
+  const othersCurled = !_fingerExtended(hand, 8, 6) &&
+                       !_fingerExtended(hand, 12, 10) &&
+                       !_fingerExtended(hand, 16, 14) &&
+                       !_fingerExtended(hand, 20, 18);
+  // Thumb tip should sit above index tip in the (camera) frame (smaller y = up).
+  const thumbAbove = hand[4].y < hand[8].y - 0.05;
+  return thumbExt && othersCurled && thumbAbove;
+}
+function detectGesture(hand) {
+  // Don't interpret gestures while the user is pinching (avoids conflict with grab/drag).
+  if (_handDist(hand, 4, 8) < state.handsPinchPct) return null;
+  if (_isFist(hand)) return 'fist';
+  if (_isThumbsUp(hand)) return 'thumbs-up';   // check before palm — thumbs-up has thumb out, palm has all out
+  if (_isOpenPalm(hand)) return 'palm';
+  return null;
+}
+
+function updateGestureState(hand) {
+  const G = state.handsGesture;
+  G.frameCount++;
+  if (G.frameCount < G.cooldownUntil) return null;
+  const g = detectGesture(hand);
+  if (g && g === G.candidate) {
+    G.candidateFrames++;
+  } else {
+    G.candidate = g;
+    G.candidateFrames = g ? 1 : 0;
+  }
+  if (g && G.candidateFrames >= 5) {       // ~⅙ second @ 30fps
+    G.cooldownUntil = G.frameCount + 30;   // 1-second cooldown
+    G.candidate = null;
+    G.candidateFrames = 0;
+    return g;
+  }
+  return null;
+}
+
+function fireHandsGesture(g) {
+  if (g === 'fist') {
+    document.getElementById('handsSave').click();
+    flashHandsMessage('SAVED');
+  } else if (g === 'palm') {
+    document.getElementById('handsReset').click();
+    flashHandsMessage('RESET');
+  } else if (g === 'thumbs-up') {
+    cycleToNextMode();
+  }
+}
+
+function cycleToNextMode() {
+  const buttons = Array.from(document.querySelectorAll('[data-mode]'));
+  const idx = buttons.findIndex(b => b.dataset.mode === state.mode);
+  if (idx < 0 || buttons.length === 0) return;
+  const next = buttons[(idx + 1) % buttons.length];
+  flashHandsMessage(`→ ${next.textContent}`);
+  // Tiny delay so the user sees the flash before the mode switches and stops the camera.
+  setTimeout(() => next.click(), 300);
+}
+
+function flashHandsMessage(msg) {
+  state.handsGesture.flash = msg;
+  state.handsGesture.flashUntil = state.handsGesture.frameCount + 45; // ~1.5s
 }
 
 // Re-route the pinch-drag for live-feed mode: instead of mutating pixels,
@@ -12242,6 +12384,31 @@ function renderHandsCanvas(pinches) {
       }
       ctx.restore();
     }
+  }
+  // Gesture flash overlay.
+  const G = state.handsGesture;
+  if (G.flash && G.frameCount < G.flashUntil) {
+    const msg = G.flash;
+    ctx.save();
+    ctx.font = 'bold 42px system-ui, -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const tw = ctx.measureText(msg).width;
+    const pad = 22;
+    const bw = tw + pad * 2;
+    const bh = 64;
+    const bx = img.w / 2 - bw / 2;
+    const by = img.h / 2 - bh / 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.strokeStyle = 'rgba(255,210,80,0.9)';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.fillStyle = 'rgba(255,225,120,1)';
+    ctx.fillText(msg, img.w / 2, img.h / 2);
+    ctx.restore();
+  } else {
+    G.flash = null;
   }
 }
 
