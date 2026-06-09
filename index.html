@@ -1134,6 +1134,12 @@
           </div>
           <div class="hint" style="margin-bottom: 12px;">How much of the canvas the canonical face fills. Set BEFORE the first capture — changing later doesn't retroactively re-warp earlier faces.</div>
 
+          <label class="field">Capture mode</label>
+          <div style="margin-bottom: 12px;">
+            <label style="font-size:11px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="collIncludeBg" checked /> Include background (warp whole frame)</label>
+            <div class="hint" style="margin-top: 4px;">When ON, the entire camera frame is warped so the face moves to canonical position and the background flows along with it. Averaging multiple captures aligns the faces and produces a blurred composite background — the classic Galton composite. When OFF, only the face crop contributes (black background).</div>
+          </div>
+
           <label class="field">Overlay</label>
           <div style="margin-bottom: 12px;">
             <label style="font-size:11px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="collShowMesh" checked /> Show face mesh on live preview</label>
@@ -2602,6 +2608,8 @@ const state = {
   collCaptureRegion: 'full',
   collCaptureLabel: '',
   collFeatherPx: 14,            // gaussian-blur radius for region mask edges
+  collIncludeBackground: true,  // ON: warp whole frame (background included). OFF: face-only on black.
+  collTrianglesFull: null,      // Delaunay triangles for face landmarks + frame anchors
 
   // Layers — value-quantized stack for layered paper sculpture
   layLevels: 5,
@@ -11657,6 +11665,9 @@ $('#collFeather').addEventListener('input', e => {
   state.collFeatherPx = clamp(parseInt(e.target.value, 10) || 0, 0, 40);
   $('#collFeatherVal').textContent = state.collFeatherPx;
 });
+$('#collIncludeBg').addEventListener('change', e => {
+  state.collIncludeBackground = e.target.checked;
+});
 
 // History controls
 $('#collViewStep').addEventListener('input', e => {
@@ -11685,6 +11696,7 @@ function _resetCollectiveOnSizeChange() {
   state.collComposite = null;
   state.collCanonical = null;
   state.collTriangles = null;
+  state.collTrianglesFull = null;
   state.collCaptures = [];
   state.collViewStep = 0;
   $('#collCount').innerHTML = '<strong>0</strong> faces in composite';
@@ -11749,6 +11761,7 @@ $('#collReset').addEventListener('click', () => {
   state.collComposite = null;
   state.collCanonical = null;
   state.collTriangles = null;
+  state.collTrianglesFull = null;
   state.collCaptures = [];
   state.collViewStep = 0;
   $('#collCount').innerHTML = '<strong>0</strong> faces in composite';
@@ -13454,7 +13467,54 @@ function computeCollectiveCanonical(srcLms, W, H) {
     triangles.push([a, b, c]);
   }
   state.collTriangles = triangles;
+  // Also build an extended triangulation that includes 12 perimeter anchor
+  // points at the output frame edges. Used when "Include background" is on
+  // so the whole camera frame can be warped (face goes to canonical, the
+  // background flows around it).
+  const anchors = _collFrameAnchors(W, H);
+  const fullDst = canonical.concat(anchors);
+  const flatFull = new Float64Array(fullDst.length * 2);
+  for (let i = 0; i < fullDst.length; i++) {
+    flatFull[i * 2] = fullDst[i][0];
+    flatFull[i * 2 + 1] = fullDst[i][1];
+  }
+  let df;
+  try { df = new window._Delaunator(flatFull); }
+  catch (_) { df = null; }
+  if (df) {
+    const triFull = df.triangles;
+    // No max-edge filter here — large triangles bridging the face to the frame
+    // edges are intentional (that's how background gets covered).
+    const trianglesFull = [];
+    for (let t = 0; t < triFull.length; t += 3) {
+      trianglesFull.push([triFull[t], triFull[t + 1], triFull[t + 2]]);
+    }
+    state.collTrianglesFull = trianglesFull;
+  } else {
+    state.collTrianglesFull = null;
+  }
   return canonical;
+}
+
+// 12 evenly-spaced anchor points around the output frame perimeter
+// (corners + 2 per edge). In source coords these map to the camera frame
+// perimeter (set at capture time); in dst coords they are at fixed
+// output-canvas perimeter positions so the frame edges stay rectangular.
+function _collFrameAnchors(W, H) {
+  return [
+    [0, 0], [W/3, 0], [2*W/3, 0], [W, 0],
+    [W, H/3], [W, 2*H/3],
+    [W, H], [2*W/3, H], [W/3, H], [0, H],
+    [0, 2*H/3], [0, H/3],
+  ];
+}
+function _collSourceAnchors(fullW, fullH) {
+  return [
+    [0, 0], [fullW/3, 0], [2*fullW/3, 0], [fullW, 0],
+    [fullW, fullH/3], [fullW, 2*fullH/3],
+    [fullW, fullH], [2*fullW/3, fullH], [fullW/3, fullH], [0, fullH],
+    [0, 2*fullH/3], [0, fullH/3],
+  ];
 }
 
 // === Region polygon definitions (canonical face mesh indices) ===
@@ -13565,17 +13625,38 @@ function captureCollective() {
     state.collCanonical = computeCollectiveCanonical(srcLms, W, H);
   }
   const canon = state.collCanonical;
-  // Warp the FULL source face → canonical into an aligned canvas (region masking happens separately).
+  // Warp into aligned canvas. Two paths:
+  // - Include background ON: extended mesh (face landmarks + 12 frame perimeter anchors).
+  //   Every triangle is warped, so the whole frame ends up on the output canvas with
+  //   the face moved to canonical position and the background flowing around it.
+  // - Include background OFF: face-only triangles, black background (original behavior).
   const aligned = document.createElement('canvas');
   aligned.width = W; aligned.height = H;
   const actx = aligned.getContext('2d');
   actx.fillStyle = '#000';
   actx.fillRect(0, 0, W, H);
-  for (const [a, b, c] of state.collTriangles) {
-    warpTriangleDraw(actx, src, [srcLms[a], srcLms[b], srcLms[c]], [canon[a], canon[b], canon[c]]);
+  if (state.collIncludeBackground && state.collTrianglesFull) {
+    const srcAnchors = _collSourceAnchors(fullW, fullH);
+    const dstAnchors = _collFrameAnchors(W, H);
+    const allSrc = srcLms.concat(srcAnchors);
+    const allDst = canon.concat(dstAnchors);
+    for (const [a, b, c] of state.collTrianglesFull) {
+      warpTriangleDraw(actx, src,
+        [allSrc[a], allSrc[b], allSrc[c]],
+        [allDst[a], allDst[b], allDst[c]]);
+    }
+  } else {
+    for (const [a, b, c] of state.collTriangles) {
+      warpTriangleDraw(actx, src, [srcLms[a], srcLms[b], srcLms[c]], [canon[a], canon[b], canon[c]]);
+    }
   }
-  // Build a smooth region mask using canonical-positioned polygons + optional Gaussian feather.
-  const mask = buildCollectiveRegionMask(W, H, canon, state.collCaptureRegion, state.collFeatherPx);
+  // Build the region mask. Special case: full + include-background → entire canvas.
+  let mask;
+  if (state.collCaptureRegion === 'full' && state.collIncludeBackground) {
+    mask = new Uint8Array(W * H).fill(255);
+  } else {
+    mask = buildCollectiveRegionMask(W, H, canon, state.collCaptureRegion, state.collFeatherPx);
+  }
   // Snapshot the warped pixels.
   const pixels = new Uint8ClampedArray(actx.getImageData(0, 0, W, H).data);
   // Push to capture list.
