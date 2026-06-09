@@ -985,6 +985,21 @@
           </div>
           <div class="hint" id="faceStatus" style="margin-bottom: 12px;">Click <em>Start</em> to load the face mesh + hand tracking models (~12 MB, one-time).</div>
 
+          <label class="field">Max faces (1–5)</label>
+          <input type="number" id="faceMaxFaces" min="1" max="5" value="1" />
+          <div class="hint" style="margin-bottom: 10px;">Each face gets its own delta storage; pinches snap to whichever face is nearest. Costs ~1.5× per extra face.</div>
+
+          <label class="field">Feature lock</label>
+          <select id="faceFeature" style="width:100%; margin-bottom: 6px; padding: 6px 8px; font-size:11px;">
+            <option value="free">Free pinch (any landmark)</option>
+            <option value="eye">Eyes only</option>
+            <option value="nose">Nose only</option>
+            <option value="mouth">Mouth only</option>
+            <option value="cheek">Cheeks only</option>
+            <option value="eyebrow">Eyebrows only</option>
+          </select>
+          <div class="hint" style="margin-bottom: 12px;">When set to a feature, only landmarks in that group can be moved — so you can aim sloppy and still grab "the mouth."</div>
+
           <label class="field">Brush radius (face-relative)</label>
           <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
             <input type="range" id="faceBrushR" min="5" max="40" value="18" style="width:140px;" />
@@ -1002,7 +1017,21 @@
             <input type="range" id="faceDepth" min="0" max="100" value="50" style="width:140px;" />
             <span id="faceDepthVal">0.50</span>
           </div>
-          <div class="hint" style="margin-bottom: 10px;">0 = all landmarks equally pinchable. Higher = forward-facing features (nose, lips) deform more; deep features (jawline, ears) deform less. Adds a pseudo-3D feel.</div>
+          <div class="hint" style="margin-bottom: 10px;">Forward-facing features (nose, lips) deform more; deep features (jawline, ears) deform less.</div>
+
+          <label class="field">Z gain (pinch-tightness bloom)</label>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
+            <input type="range" id="faceZGain" min="0" max="100" value="0" style="width:140px;" />
+            <span id="faceZGainVal">0.00</span>
+          </div>
+          <div class="hint" style="margin-bottom: 10px;">Per-frame radial bloom proportional to how tight your pinch is. Tight pinch held still = the area swells outward (reads as "pulling toward camera"). Set to 0 to disable.</div>
+
+          <label class="field">Tracking smoothing</label>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
+            <input type="range" id="faceSmoothing" min="0" max="90" value="50" style="width:140px;" />
+            <span id="faceSmoothingVal">0.50</span>
+          </div>
+          <div class="hint" style="margin-bottom: 10px;">0 = no smoothing (responsive, jittery). 0.50 = balanced. Above 0.80 starts to feel laggy.</div>
 
           <label class="field">Pinch threshold</label>
           <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
@@ -2422,11 +2451,15 @@ const state = {
   handsTrailDecay: 0,             // 0–0.99; how much of last frame to keep
   handsTrailBuf: null,            // Uint8ClampedArray of last displayed frame
 
-  // Face stretch — landmark-anchored mesh deformation
-  faceBrushPct: 0.18,             // brush radius as fraction of face width
+  // Face stretch — landmark-anchored mesh deformation (multi-face capable)
+  faceBrushPct: 0.18,
   faceSoft: 0.55,
-  faceDepthWeight: 0.5,           // 0–1; multiplier for z-based displacement
+  faceDepthWeight: 0.5,
   facePinchPct: 0.06,
+  faceSmoothing: 0.5,             // 0 = no smoothing, 0.95 = very laggy
+  faceMaxFaces: 1,                // 1–5 simultaneous faces
+  faceFeature: 'free',            // 'free' | 'eye' | 'nose' | 'mouth' | 'cheek' | 'eyebrow'
+  faceZGain: 0,                   // pinch-tightness → radial bloom (pseudo-3D)
   faceShowMesh: false,
   faceShowSkel: false,
   faceShowCam: true,
@@ -2434,17 +2467,17 @@ const state = {
   faceRes: 480,
   faceStream: null,
   faceVideo: null,
-  faceMeshDet: null,              // MediaPipe FaceMesh instance
-  faceHandsDet: null,             // MediaPipe Hands instance (independent of Hands mode's detector)
+  faceMeshDet: null,
+  faceHandsDet: null,
   faceRAF: 0,
-  faceLandmarks: null,            // last frame's face landmarks (normalized 0-1, with z)
-  faceHandLandmarks: null,        // last frame's hand landmarks
-  faceDeltas: null,               // Float32Array(468 * 2) per-landmark offset in face-normalized coords
-  facePinchState: {               // last seen pinch state per hand
-    0: { active: false, x: 0, y: 0 },
-    1: { active: false, x: 0, y: 0 },
+  faceLandmarksList: [],          // raw multiFaceLandmarks from current frame
+  faceHandLandmarks: null,
+  faceSlots: [],                  // [{ smoothed, deltas, axisU, axisV, scale, centroid, minZ, zRange }, ...]
+  facePinchState: {
+    0: { active: false, x: 0, y: 0, tightness: 0 },
+    1: { active: false, x: 0, y: 0, tightness: 0 },
   },
-  faceLastImg: null,              // last rendered Uint8ClampedArray (for save)
+  faceLastImg: null,
 
   // Layers — value-quantized stack for layered paper sculpture
   layLevels: 5,
@@ -11416,6 +11449,17 @@ $('#handsSave').addEventListener('click', () => {
 /* Face stretch wiring */
 $('#faceStart').addEventListener('click', startFace);
 $('#faceStop').addEventListener('click', () => { stopFace(); setFaceStatus('Stopped.'); });
+$('#faceMaxFaces').addEventListener('input', e => {
+  state.faceMaxFaces = clamp(parseInt(e.target.value, 10) || 1, 1, 5);
+  if (state.faceMeshDet) {
+    state.faceMeshDet.setOptions({ maxNumFaces: state.faceMaxFaces });
+  }
+  // Drop slots beyond the new max.
+  state.faceSlots = state.faceSlots.slice(0, state.faceMaxFaces);
+});
+$('#faceFeature').addEventListener('change', e => {
+  state.faceFeature = e.target.value;
+});
 $('#faceBrushR').addEventListener('input', e => {
   state.faceBrushPct = clamp((parseInt(e.target.value, 10) || 18) / 100, 0.05, 0.40);
   $('#faceBrushRVal').textContent = (state.faceBrushPct * 100).toFixed(0);
@@ -11427,6 +11471,14 @@ $('#faceSoft').addEventListener('input', e => {
 $('#faceDepth').addEventListener('input', e => {
   state.faceDepthWeight = clamp((parseInt(e.target.value, 10) || 0) / 100, 0, 1);
   $('#faceDepthVal').textContent = state.faceDepthWeight.toFixed(2);
+});
+$('#faceZGain').addEventListener('input', e => {
+  state.faceZGain = clamp((parseInt(e.target.value, 10) || 0) / 100, 0, 1);
+  $('#faceZGainVal').textContent = state.faceZGain.toFixed(2);
+});
+$('#faceSmoothing').addEventListener('input', e => {
+  state.faceSmoothing = clamp((parseInt(e.target.value, 10) || 0) / 100, 0, 0.95);
+  $('#faceSmoothingVal').textContent = state.faceSmoothing.toFixed(2);
 });
 $('#facePinch').addEventListener('input', e => {
   state.facePinchPct = clamp((parseInt(e.target.value, 10) || 6) / 100, 0.03, 0.12);
@@ -11440,7 +11492,9 @@ $('#faceRes').addEventListener('input', e => {
   state.faceRes = clamp(parseInt(e.target.value, 10) || 480, 240, 960);
 });
 $('#faceReset').addEventListener('click', () => {
-  if (state.faceDeltas) state.faceDeltas.fill(0);
+  for (const s of state.faceSlots) {
+    if (s) s.deltas.fill(0);
+  }
 });
 $('#faceSave').addEventListener('click', () => {
   if (!state.faceLastImg) { alert('Nothing to save yet — start face tracking first.'); return; }
@@ -12480,9 +12534,11 @@ async function startFace() {
     selfieMode: true,
   });
   fm.onResults(results => {
-    state.faceLandmarks = (results.multiFaceLandmarks && results.multiFaceLandmarks[0]) || null;
+    state.faceLandmarksList = results.multiFaceLandmarks || [];
   });
   state.faceMeshDet = fm;
+  // Update maxFaces from current state.
+  fm.setOptions({ maxNumFaces: clamp(state.faceMaxFaces, 1, 5) });
   // Build hand detector
   const hd = new window.Hands({ locateFile: f => MEDIAPIPE_HANDS_CDN + f });
   hd.setOptions({
@@ -12497,10 +12553,10 @@ async function startFace() {
     onFaceFrameUpdate();
   });
   state.faceHandsDet = hd;
-  state.faceDeltas = new Float32Array(478 * 2);   // refineLandmarks → 478 (468 + 10 iris)
+  state.faceSlots = [];                              // start empty; populated as faces arrive
   state.facePinchState = {
-    0: { active: false, x: 0, y: 0 },
-    1: { active: false, x: 0, y: 0 },
+    0: { active: false, x: 0, y: 0, tightness: 0 },
+    1: { active: false, x: 0, y: 0, tightness: 0 },
   };
   $('#faceStart').disabled = true;
   $('#faceStop').disabled = false;
@@ -12537,6 +12593,126 @@ async function faceLoop() {
   state.faceRAF = requestAnimationFrame(faceLoop);
 }
 
+// --- Helpers, constants, and groups ---
+
+// MediaPipe Face Mesh landmark indices grouped by feature.
+// Sources: MediaPipe canonical face mesh (468 + 10 iris when refineLandmarks).
+const FACE_FEATURE_GROUPS = {
+  free: null,
+  eye: new Set([
+    33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246,
+    263,249,390,373,374,380,381,382,362,398,384,385,386,387,388,466,
+  ]),
+  nose: new Set([1,2,3,4,5,6,8,19,20,94,97,98,129,168,195,197,196,236,5,275,358]),
+  mouth: new Set([
+    61,146,91,181,84,17,314,405,321,375,291,409,270,269,267,0,37,39,40,185,
+    78,95,88,178,87,14,317,402,318,324,308,415,310,311,312,13,82,81,80,191,
+  ]),
+  cheek: new Set([
+    50,101,118,117,123,147,187,205,212,234,236,266,330,347,346,352,411,425,432,454,
+    36,205,425,266,
+  ]),
+  eyebrow: new Set([
+    70,63,105,66,107,55,65,52,53,46,
+    336,296,334,293,300,285,295,282,283,276,
+  ]),
+};
+
+// Eye-outer corners — used to compute the face axis for rotation-aware deltas.
+const FACE_EYE_R_OUTER = 33;
+const FACE_EYE_L_OUTER = 263;
+
+// Compute screen-space x for a landmark, accounting for the mirror flag.
+function lmScreenX(p, W) { return (state.faceMirror ? p.x : 1 - p.x) * W; }
+
+// Pinch tightness from thumb-index distance (0 at threshold edge, 1 when touching).
+function pinchTightness(dist) {
+  const thr = state.facePinchPct;
+  if (dist >= thr) return 0;
+  return clamp(1 - (dist / thr), 0, 1);
+}
+
+// Snap face index → slot. v1: index-based (MediaPipe orders mostly stable).
+function ensureFaceSlot(slotIdx, lmCount) {
+  let s = state.faceSlots[slotIdx];
+  if (!s) {
+    s = state.faceSlots[slotIdx] = {
+      smoothed: new Array(lmCount).fill(0).map(() => ({ x: 0.5, y: 0.5, z: 0 })),
+      deltas: new Float32Array(lmCount * 2),
+      axisU: [1, 0], axisV: [0, 1],
+      scale: 1, centroid: [0, 0], minZ: 0, zRange: 1,
+      _initialized: false,
+    };
+  }
+  return s;
+}
+
+// Update one face slot from raw MediaPipe landmarks: smoothing + axis + scale.
+function updateFaceSlot(slot, rawLms, W, H) {
+  const a = 1 - clamp(state.faceSmoothing, 0, 0.95);
+  if (!slot._initialized) {
+    for (let i = 0; i < rawLms.length; i++) {
+      slot.smoothed[i].x = rawLms[i].x;
+      slot.smoothed[i].y = rawLms[i].y;
+      slot.smoothed[i].z = rawLms[i].z || 0;
+    }
+    slot._initialized = true;
+  } else {
+    for (let i = 0; i < rawLms.length; i++) {
+      slot.smoothed[i].x += (rawLms[i].x - slot.smoothed[i].x) * a;
+      slot.smoothed[i].y += (rawLms[i].y - slot.smoothed[i].y) * a;
+      slot.smoothed[i].z += ((rawLms[i].z || 0) - slot.smoothed[i].z) * a;
+    }
+  }
+  // Face axis from eye outer corners.
+  const er = slot.smoothed[FACE_EYE_R_OUTER];
+  const el = slot.smoothed[FACE_EYE_L_OUTER];
+  const erx = lmScreenX(er, W), ery = er.y * H;
+  const elx = lmScreenX(el, W), ely = el.y * H;
+  let ux = elx - erx, uy = ely - ery;
+  const ul = Math.hypot(ux, uy) || 1;
+  ux /= ul; uy /= ul;
+  slot.axisU[0] = ux; slot.axisU[1] = uy;
+  slot.axisV[0] = -uy; slot.axisV[1] = ux;
+  // Bbox + scale + centroid + z range
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  let cxSum = 0, cySum = 0;
+  for (const p of slot.smoothed) {
+    const sx = lmScreenX(p, W), sy = p.y * H;
+    if (sx < minX) minX = sx; if (sx > maxX) maxX = sx;
+    if (sy < minY) minY = sy; if (sy > maxY) maxY = sy;
+    if (p.z < minZ) minZ = p.z; if (p.z > maxZ) maxZ = p.z;
+    cxSum += sx; cySum += sy;
+  }
+  slot.scale = Math.max(maxX - minX, maxY - minY);
+  slot.centroid[0] = cxSum / slot.smoothed.length;
+  slot.centroid[1] = cySum / slot.smoothed.length;
+  slot.minZ = minZ;
+  slot.zRange = Math.max(1e-3, maxZ - minZ);
+}
+
+function nearestFaceSlot(x, y) {
+  let best = -1, bestD = Infinity;
+  for (let i = 0; i < state.faceSlots.length; i++) {
+    const s = state.faceSlots[i];
+    if (!s) continue;
+    const d = Math.hypot(x - s.centroid[0], y - s.centroid[1]);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
+// Apply a face slot's delta[i] (face-local) to its tracked landmark[i] to get
+// deformed image-space coordinates.
+function applyFaceDeltaToLm(slot, W, H, i) {
+  const lx = lmScreenX(slot.smoothed[i], W);
+  const ly = slot.smoothed[i].y * H;
+  const du = slot.deltas[i * 2], dv = slot.deltas[i * 2 + 1];
+  const dx = (du * slot.axisU[0] + dv * slot.axisV[0]) * slot.scale;
+  const dy = (du * slot.axisU[1] + dv * slot.axisV[1]) * slot.scale;
+  return [lx + dx, ly + dy];
+}
+
 // Called whenever new hand results arrive (≈ once per detection).
 function onFaceFrameUpdate() {
   const v = state.faceVideo;
@@ -12551,30 +12727,16 @@ function onFaceFrameUpdate() {
   if (state.faceMirror) { sctx.translate(W, 0); sctx.scale(-1, 1); }
   sctx.drawImage(v, 0, 0, W, H);
 
-  // If no face this frame, just show the live camera frame and return.
-  if (!state.faceLandmarks) {
-    drawFaceCanvas(src, W, H, null, null, null);
-    return;
+  // Update each face slot from this frame's raw landmarks.
+  const facesRaw = state.faceLandmarksList || [];
+  for (let fi = 0; fi < facesRaw.length; fi++) {
+    const slot = ensureFaceSlot(fi, facesRaw[fi].length);
+    updateFaceSlot(slot, facesRaw[fi], W, H);
   }
-  // Compute face bbox + scale (in image pixels). Used for face-relative coords.
-  const lms = state.faceLandmarks;
-  let minX = 1, minY = 1, maxX = 0, maxY = 0, minZ = Infinity, maxZ = -Infinity;
-  for (const p of lms) {
-    if (p.x < minX) minX = p.x;
-    if (p.x > minX && p.x > maxX) maxX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.y > maxY) maxY = p.y;
-    const z = p.z || 0;
-    if (z < minZ) minZ = z;
-    if (z > maxZ) maxZ = z;
-  }
-  const faceW = (maxX - minX) * W;
-  const faceH = (maxY - minY) * H;
-  const faceScale = Math.max(faceW, faceH);
-  const zRange = Math.max(1e-3, maxZ - minZ);
+  // If a slot has no corresponding face this frame, leave its smoothed landmarks
+  // as-is (will gradually go stale; for now we just skip rendering it below).
 
-  // Process pinch state and route to face deltas.
+  // Pinch state + routing to the nearest face slot.
   const hands = state.faceHandLandmarks || [];
   const pinchThr = state.facePinchPct;
   const pinches = [];
@@ -12583,85 +12745,121 @@ function onFaceFrameUpdate() {
     const t = h[4], idx = h[8];
     const tx = state.faceMirror ? t.x : 1 - t.x;
     const ix = state.faceMirror ? idx.x : 1 - idx.x;
-    const dist = Math.hypot(tx - ix, t.y - idx.y);
-    const active = dist < pinchThr;
+    const distNorm = Math.hypot(tx - ix, t.y - idx.y);
+    const active = distNorm < pinchThr;
+    const tight = pinchTightness(distNorm);
     const midX = ((tx + ix) / 2) * W;
     const midY = ((t.y + idx.y) / 2) * H;
-    pinches.push({ x: midX, y: midY, active });
-    const prev = state.facePinchState[i] || { active: false, x: midX, y: midY };
-    if (active && prev.active) {
-      const dx = midX - prev.x;
-      const dy = midY - prev.y;
-      if (Math.hypot(dx, dy) > 0.5) {
-        paintFaceDeltas(W, H, prev.x, prev.y, dx, dy, faceScale, zRange, minZ);
+    pinches.push({ x: midX, y: midY, active, tightness: tight });
+    const prev = state.facePinchState[i] || { active: false, x: midX, y: midY, tightness: 0 };
+    if (active) {
+      const targetSlotIdx = nearestFaceSlot(midX, midY);
+      if (targetSlotIdx >= 0) {
+        const slot = state.faceSlots[targetSlotIdx];
+        const dx = midX - prev.x, dy = midY - prev.y;
+        const moved = Math.hypot(dx, dy);
+        if (prev.active && moved > 0.5) {
+          paintFaceDeltas(slot, W, H, prev.x, prev.y, dx, dy);
+        }
+        // Per-frame radial bloom proportional to pinch tightness (pseudo-3D push).
+        if (state.faceZGain > 0 && tight > 0) {
+          applyZBloom(slot, W, H, midX, midY, tight);
+        }
       }
     }
-    state.facePinchState[i] = { active, x: midX, y: midY };
+    state.facePinchState[i] = { active, x: midX, y: midY, tightness: tight };
   }
   for (let i = hands.length; i < 2; i++) {
-    state.facePinchState[i] = { active: false, x: 0, y: 0 };
+    state.facePinchState[i] = { active: false, x: 0, y: 0, tightness: 0 };
   }
-  drawFaceCanvas(src, W, H, pinches, faceW, { minZ, zRange });
+  drawFaceCanvas(src, W, H, pinches, facesRaw.length);
 }
 
-// Push displacement into per-landmark face-relative deltas based on a brush
-// drag around (cx, cy). Strength falls off by gaussian distance to each
-// landmark and (optionally) scales by landmark depth.
-function paintFaceDeltas(W, H, cx, cy, dx, dy, faceScale, zRange, zMin) {
-  const lms = state.faceLandmarks;
-  if (!lms || !state.faceDeltas) return;
-  const brushPx = state.faceBrushPct * faceScale;
+// Apply a drag (dx, dy) at (cx, cy) to a single face slot's deltas,
+// stored in face-local axes so they survive head rotation.
+function paintFaceDeltas(slot, W, H, cx, cy, dx, dy) {
+  if (!slot) return;
+  const brushPx = state.faceBrushPct * slot.scale;
   const sigma = brushPx * clamp(state.faceSoft, 0.2, 1.0);
   const sigma2 = sigma * sigma * 2;
   const zw = state.faceDepthWeight;
-  // Convert the drag from image pixels into face-relative units.
-  const ndx = dx / faceScale, ndy = dy / faceScale;
-  for (let i = 0; i < lms.length; i++) {
-    const lx = lms[i].x * W, ly = lms[i].y * H;
+  const allowed = FACE_FEATURE_GROUPS[state.faceFeature];
+  // Drag → face-local axes (rotation invariant).
+  const ux = slot.axisU[0], uy = slot.axisU[1];
+  const vx = slot.axisV[0], vy = slot.axisV[1];
+  const du = (dx * ux + dy * uy) / slot.scale;
+  const dv = (dx * vx + dy * vy) / slot.scale;
+  for (let i = 0; i < slot.smoothed.length; i++) {
+    if (allowed && !allowed.has(i)) continue;
+    const lx = lmScreenX(slot.smoothed[i], W);
+    const ly = slot.smoothed[i].y * H;
     const ox = lx - cx, oy = ly - cy;
     const d2 = ox * ox + oy * oy;
     if (d2 > brushPx * brushPx) continue;
     const w = Math.exp(-d2 / sigma2);
-    // Depth modulation: forward features (smaller z in MediaPipe = closer to camera)
-    // get a stronger pinch. We map (z - zMin) / zRange to [0,1] and weight by zw.
-    const zNorm = (lms[i].z - zMin) / zRange;        // 0 = closest, 1 = farthest
-    const depthScale = 1 + zw * (1 - 2 * zNorm);      // 1+zw at closest, 1-zw at farthest
-    const ddx = ndx * w * depthScale;
-    const ddy = ndy * w * depthScale;
-    state.faceDeltas[i * 2    ] += ddx;
-    state.faceDeltas[i * 2 + 1] += ddy;
+    const zNorm = (slot.smoothed[i].z - slot.minZ) / slot.zRange;
+    const depthScale = 1 + zw * (1 - 2 * zNorm);
+    slot.deltas[i * 2    ] += du * w * depthScale;
+    slot.deltas[i * 2 + 1] += dv * w * depthScale;
   }
 }
 
-function drawFaceCanvas(src, W, H, pinches, faceScale, zInfo) {
+// Pseudo-3D: tight pinch produces a per-frame radial outward bloom of nearby
+// landmarks. Reads as "pulling that area toward the camera."
+function applyZBloom(slot, W, H, cx, cy, tightness) {
+  const brushPx = state.faceBrushPct * slot.scale;
+  const sigma = brushPx * clamp(state.faceSoft, 0.2, 1.0);
+  const sigma2 = sigma * sigma * 2;
+  const allowed = FACE_FEATURE_GROUPS[state.faceFeature];
+  const bloomMag = tightness * state.faceZGain * 0.035;   // per-frame face-local
+  const ux = slot.axisU[0], uy = slot.axisU[1];
+  const vx = slot.axisV[0], vy = slot.axisV[1];
+  for (let i = 0; i < slot.smoothed.length; i++) {
+    if (allowed && !allowed.has(i)) continue;
+    const lx = lmScreenX(slot.smoothed[i], W);
+    const ly = slot.smoothed[i].y * H;
+    const ox = lx - cx, oy = ly - cy;
+    const d2 = ox * ox + oy * oy;
+    if (d2 > brushPx * brushPx || d2 < 1) continue;
+    const r = Math.sqrt(d2);
+    const w = Math.exp(-d2 / sigma2);
+    const rx = ox / r, ry = oy / r;
+    // Radial vector → face-local axes.
+    const ru = (rx * ux + ry * uy);
+    const rv = (rx * vx + ry * vy);
+    slot.deltas[i * 2    ] += ru * bloomMag * w;
+    slot.deltas[i * 2 + 1] += rv * bloomMag * w;
+  }
+}
+
+function drawFaceCanvas(src, W, H, pinches, activeFaceCount) {
   const cv = document.getElementById('gray-canvas');
   if (!cv) return;
   cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
-  // Background: the live camera frame.
   ctx.drawImage(src, 0, 0);
 
-  // If face mesh available, triangulate and warp the face region.
-  const lms = state.faceLandmarks;
-  if (lms && state.faceDeltas && window._Delaunator) {
-    // Build tracked and deformed point arrays.
-    const N = lms.length;
-    const pts = new Array(N);
-    const def = new Array(N);
-    for (let i = 0; i < N; i++) {
-      const lx = lms[i].x * W, ly = lms[i].y * H;
-      pts[i] = [lx, ly];
-      def[i] = [lx + state.faceDeltas[i * 2] * faceScale, ly + state.faceDeltas[i * 2 + 1] * faceScale];
-    }
-    // Delaunay on the TRACKED points. Filter degenerate triangles by max edge.
-    const flat = new Float64Array(N * 2);
-    for (let i = 0; i < N; i++) { flat[i * 2] = pts[i][0]; flat[i * 2 + 1] = pts[i][1]; }
-    let d;
-    try { d = new window._Delaunator(flat); }
-    catch (_) { d = null; }
-    if (d) {
+  // For each ACTIVE face slot (one this frame), triangulate and warp.
+  if (window._Delaunator) {
+    for (let sIdx = 0; sIdx < activeFaceCount; sIdx++) {
+      const slot = state.faceSlots[sIdx];
+      if (!slot) continue;
+      const N = slot.smoothed.length;
+      const pts = new Array(N);
+      const def = new Array(N);
+      for (let i = 0; i < N; i++) {
+        const lx = lmScreenX(slot.smoothed[i], W);
+        const ly = slot.smoothed[i].y * H;
+        pts[i] = [lx, ly];
+        def[i] = applyFaceDeltaToLm(slot, W, H, i);
+      }
+      const flat = new Float64Array(N * 2);
+      for (let i = 0; i < N; i++) { flat[i * 2] = pts[i][0]; flat[i * 2 + 1] = pts[i][1]; }
+      let d;
+      try { d = new window._Delaunator(flat); } catch (_) { continue; }
       const tri = d.triangles;
-      const maxEdge2 = (faceScale * 0.35) * (faceScale * 0.35); // skip giant outer triangles
+      const maxEdge = slot.scale * 0.35;
+      const maxEdge2 = maxEdge * maxEdge;
       for (let t = 0; t < tri.length; t += 3) {
         const a = tri[t], b = tri[t + 1], c = tri[t + 2];
         const A = pts[a], B = pts[b], C = pts[c];
@@ -12674,16 +12872,24 @@ function drawFaceCanvas(src, W, H, pinches, faceScale, zInfo) {
     }
   }
 
-  // Face mesh dot overlay
-  if (state.faceShowMesh && lms) {
+  // Mesh dot overlay (deformed positions)
+  if (state.faceShowMesh) {
     ctx.fillStyle = 'rgba(120, 220, 255, 0.55)';
-    for (let i = 0; i < lms.length; i++) {
-      const x = lms[i].x * W, y = lms[i].y * H;
-      const dx = state.faceDeltas ? state.faceDeltas[i*2] * faceScale : 0;
-      const dy = state.faceDeltas ? state.faceDeltas[i*2+1] * faceScale : 0;
-      ctx.beginPath();
-      ctx.arc(x + dx, y + dy, 1.6, 0, Math.PI * 2);
-      ctx.fill();
+    for (let sIdx = 0; sIdx < activeFaceCount; sIdx++) {
+      const slot = state.faceSlots[sIdx];
+      if (!slot) continue;
+      const allowed = FACE_FEATURE_GROUPS[state.faceFeature];
+      for (let i = 0; i < slot.smoothed.length; i++) {
+        if (allowed && !allowed.has(i)) {
+          ctx.fillStyle = 'rgba(120, 220, 255, 0.25)';
+        } else {
+          ctx.fillStyle = 'rgba(255, 200, 60, 0.85)';
+        }
+        const [dx, dy] = applyFaceDeltaToLm(slot, W, H, i);
+        ctx.beginPath();
+        ctx.arc(dx, dy, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
   // Hand skeleton overlay
@@ -12711,14 +12917,17 @@ function drawFaceCanvas(src, W, H, pinches, faceScale, zInfo) {
       }
     }
   }
-  // Pinch halos
+  // Pinch halos (size by brush radius of nearest face)
   if (pinches) {
     for (const p of pinches) {
       if (!p.active) continue;
+      const nearest = nearestFaceSlot(p.x, p.y);
+      const slot = nearest >= 0 ? state.faceSlots[nearest] : null;
+      const r = slot ? state.faceBrushPct * slot.scale : 30;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, (state.faceBrushPct * faceScale) || 30, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255, 200, 60, 0.85)';
-      ctx.lineWidth = 3;
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255, 200, 60, ${0.5 + p.tightness * 0.4})`;
+      ctx.lineWidth = 2 + p.tightness * 3;
       ctx.stroke();
       ctx.beginPath();
       ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
@@ -12745,7 +12954,6 @@ function drawFaceCanvas(src, W, H, pinches, faceScale, zInfo) {
     }
     ctx.restore();
   }
-  // Cache the rendered output for save.
   state.faceLastImg = ctx.getImageData(0, 0, W, H);
 }
 
