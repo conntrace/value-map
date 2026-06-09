@@ -1076,8 +1076,39 @@
           </div>
           <div class="hint" id="collStatus" style="margin-bottom: 12px;">Click <em>Start camera</em>. Models from the Face stretch mode are reused if already loaded.</div>
 
+          <label class="field" style="margin-top: 4px;">Next capture — options</label>
+          <div class="row" style="margin-bottom: 6px;">
+            <div>
+              <label class="field" style="font-size:10px;">Weight (×)</label>
+              <input type="number" id="collCapWeight" min="0.1" max="5" step="0.1" value="1.0" />
+            </div>
+            <div>
+              <label class="field" style="font-size:10px;">Region</label>
+              <select id="collCapRegion" style="width:100%; padding: 4px 6px; font-size: 11px;">
+                <option value="full">Whole face</option>
+                <option value="eye">Eyes only</option>
+                <option value="nose">Nose only</option>
+                <option value="mouth">Mouth only</option>
+                <option value="cheek">Cheeks only</option>
+                <option value="eyebrow">Eyebrows only</option>
+              </select>
+            </div>
+          </div>
+          <input type="text" id="collCapLabel" placeholder="Label (e.g. Bob)" style="width:100%; margin-bottom: 6px; padding: 6px 8px; font-size: 11px;" />
+          <div class="hint" style="margin-bottom: 10px;"><strong>Weight</strong> controls how strongly this face pulls the composite (1× = average, 2× = double-counted). <strong>Region</strong> contributes only those landmarks (Frankenstein mode — eyes from one, mouth from another). <strong>Label</strong> is shown in the labels overlay and time-lapse.</div>
+
           <button id="collCapture" class="btn" style="width:100%; font-size: 14px; padding: 12px; margin-bottom: 6px;" disabled>Capture face</button>
           <div class="hint" id="collCount" style="margin-bottom: 12px;"><strong>0</strong> faces in composite</div>
+
+          <label class="field">History</label>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom: 6px;">
+            <input type="range" id="collViewStep" min="1" max="1" value="1" style="width:140px;" disabled />
+            <span id="collViewStepVal">latest</span>
+          </div>
+          <div class="hint" style="margin-bottom: 8px;">Scrub back to view the composite as it was at any past step (live captures still increment N).</div>
+          <div style="display:flex; gap:6px; margin-bottom: 12px;">
+            <button id="collUndo" class="btn ghost" style="font-size: 11px; flex:1;" disabled>Undo last capture</button>
+          </div>
 
           <label class="field">Output size</label>
           <div class="row" style="margin-bottom: 10px;">
@@ -1102,15 +1133,22 @@
           <div style="margin-bottom: 12px;">
             <label style="font-size:11px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="collShowMesh" checked /> Show face mesh on live preview</label>
             <label style="font-size:11px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="collShowPreview" checked /> Show live camera preview</label>
+            <label style="font-size:11px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="collShowLabels" /> Show capture labels on composite</label>
             <label style="font-size:11px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="collMirror" checked /> Mirror camera (selfie view)</label>
           </div>
 
-          <label class="field" style="margin-top: 4px;">Actions</label>
+          <label class="field" style="margin-top: 4px;">Exports</label>
           <div style="display:flex; gap:6px; margin-bottom: 4px;">
-            <button id="collReset" class="btn ghost" style="font-size: 11px; flex:1;">Reset composite</button>
             <button id="collSave" class="btn ghost" style="font-size: 11px; flex:1;">Save composite</button>
+            <button id="collStrip" class="btn ghost" style="font-size: 11px; flex:1;">Comparison strip</button>
           </div>
-          <div class="hint">Reset wipes the average and the canonical template. Save downloads the current composite PNG.</div>
+          <div style="display:flex; gap:6px; margin-bottom: 6px;">
+            <button id="collTimelapse" class="btn ghost" style="font-size: 11px; flex:1;">Time-lapse video</button>
+          </div>
+          <div class="hint" style="margin-bottom: 12px;"><strong>Comparison strip</strong>: side-by-side PNG of composites at log-spaced steps. <strong>Time-lapse</strong>: WebM video showing the composite building up frame-by-frame.</div>
+
+          <button id="collReset" class="btn ghost" style="width:100%; font-size: 11px;">Reset composite</button>
+          <div class="hint">Reset clears all captures and the canonical template.</div>
         </div>
 
         <div id="mode-riso" style="display: none;">
@@ -2535,22 +2573,29 @@ const state = {
   },
   faceLastImg: null,
 
-  // Collective — composite portrait via face-mesh registration + running average
+  // Collective — composite portrait via face-mesh registration + weighted average
   collW: 480,
   collH: 480,
   collFaceScale: 0.80,
   collShowMesh: true,
   collShowPreview: true,
+  collShowLabels: false,
   collMirror: true,
   collStream: null,
   collVideo: null,
-  collDetector: null,           // MediaPipe FaceMesh (own instance — separate from Face mode)
+  collDetector: null,
   collRAF: 0,
-  collLandmarks: null,          // current frame's live face landmarks
-  collCanonical: null,          // canonical landmark template (Array<[x,y]>) in output coords
-  collTriangles: null,          // cached Delaunay triangles on canonical
-  collComposite: null,          // Float32Array RGBA accumulator (W*H*4)
-  collCount: 0,                 // number of faces in composite
+  collLandmarks: null,
+  collCanonical: null,
+  collTriangles: null,
+  collComposite: null,          // Float32Array RGBA (W*H*4) — last computed view
+  // Per-capture storage so weights and view-step scrubbing can recompute on demand.
+  collCaptures: [],             // [{ pixels: Uint8ClampedArray, mask: Uint8Array, weight, label, region }]
+  collViewStep: 0,              // 0 = latest; >0 = freeze composite at step N
+  // Options that apply to the NEXT capture (cleared/preserved as appropriate).
+  collCaptureWeight: 1.0,
+  collCaptureRegion: 'full',
+  collCaptureLabel: '',
 
   // Layers — value-quantized stack for layered paper sculpture
   layLevels: 5,
@@ -11591,52 +11636,86 @@ $$('#face-renderer button').forEach(btn => {
 $('#collStart').addEventListener('click', startCollective);
 $('#collStop').addEventListener('click', () => { stopCollective(); setCollStatus('Stopped.'); });
 $('#collCapture').addEventListener('click', captureCollective);
+
+// Per-capture options
+$('#collCapWeight').addEventListener('input', e => {
+  state.collCaptureWeight = clamp(parseFloat(e.target.value) || 1, 0.1, 5);
+});
+$('#collCapRegion').addEventListener('change', e => {
+  state.collCaptureRegion = e.target.value;
+});
+$('#collCapLabel').addEventListener('input', e => {
+  state.collCaptureLabel = e.target.value;
+});
+
+// History controls
+$('#collViewStep').addEventListener('input', e => {
+  state.collViewStep = clamp(parseInt(e.target.value, 10) || 1, 1, state.collCaptures.length);
+  recomputeCompositeAtStep(state.collViewStep);
+  updateCollHistoryControls();
+  renderCollective();
+});
+$('#collUndo').addEventListener('click', () => {
+  if (state.collCaptures.length === 0) return;
+  state.collCaptures.pop();
+  // If we undid the first capture, also clear the canonical so the next capture re-establishes it.
+  if (state.collCaptures.length === 0) {
+    state.collCanonical = null;
+    state.collTriangles = null;
+  }
+  state.collViewStep = state.collCaptures.length;
+  recomputeCompositeAtStep(state.collViewStep);
+  updateCollHistoryControls();
+  $('#collCount').innerHTML = `<strong>${state.collCaptures.length}</strong> face${state.collCaptures.length === 1 ? '' : 's'} in composite`;
+  renderCollective();
+});
+
+// Output size + face scale
+function _resetCollectiveOnSizeChange() {
+  state.collComposite = null;
+  state.collCanonical = null;
+  state.collTriangles = null;
+  state.collCaptures = [];
+  state.collViewStep = 0;
+  $('#collCount').innerHTML = '<strong>0</strong> faces in composite';
+  updateCollHistoryControls();
+}
 $('#collW').addEventListener('input', e => {
-  state.collW = clamp(parseInt(e.target.value, 10) || 480, 240, 1024);
-  // Changing size invalidates the canonical template + composite (size mismatch).
-  if (state.collCount > 0) {
+  const nw = clamp(parseInt(e.target.value, 10) || 480, 240, 1024);
+  if (state.collCaptures.length > 0 && nw !== state.collW) {
     if (!confirm('Changing output size will reset the composite. Continue?')) {
       e.target.value = state.collW;
       return;
     }
-    state.collComposite = null;
-    state.collCanonical = null;
-    state.collTriangles = null;
-    state.collCount = 0;
-    $('#collCount').innerHTML = '<strong>0</strong> faces in composite';
+    _resetCollectiveOnSizeChange();
   }
+  state.collW = nw;
   renderCollective();
 });
 $('#collH').addEventListener('input', e => {
-  state.collH = clamp(parseInt(e.target.value, 10) || 480, 240, 1024);
-  if (state.collCount > 0) {
+  const nh = clamp(parseInt(e.target.value, 10) || 480, 240, 1024);
+  if (state.collCaptures.length > 0 && nh !== state.collH) {
     if (!confirm('Changing output size will reset the composite. Continue?')) {
       e.target.value = state.collH;
       return;
     }
-    state.collComposite = null;
-    state.collCanonical = null;
-    state.collTriangles = null;
-    state.collCount = 0;
-    $('#collCount').innerHTML = '<strong>0</strong> faces in composite';
+    _resetCollectiveOnSizeChange();
   }
+  state.collH = nh;
   renderCollective();
 });
 $('#collFaceScale').addEventListener('input', e => {
   state.collFaceScale = clamp((parseInt(e.target.value, 10) || 80) / 100, 0.4, 0.95);
   $('#collFaceScaleVal').textContent = (state.collFaceScale * 100).toFixed(0);
 });
+
+// Overlay toggles
 $('#collShowMesh').addEventListener('change', e => { state.collShowMesh = e.target.checked; });
 $('#collShowPreview').addEventListener('change', e => { state.collShowPreview = e.target.checked; });
+$('#collShowLabels').addEventListener('change', e => { state.collShowLabels = e.target.checked; renderCollective(); });
 $('#collMirror').addEventListener('change', e => { state.collMirror = e.target.checked; });
-$('#collReset').addEventListener('click', () => {
-  state.collComposite = null;
-  state.collCanonical = null;
-  state.collTriangles = null;
-  state.collCount = 0;
-  $('#collCount').innerHTML = '<strong>0</strong> faces in composite';
-  renderCollective();
-});
+
+// Exports
 $('#collSave').addEventListener('click', () => {
   if (!state.collComposite) { alert('Nothing to save yet — capture at least one face.'); return; }
   const W = state.collW, H = state.collH;
@@ -11650,7 +11729,21 @@ $('#collSave').addEventListener('click', () => {
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
   cv.getContext('2d').putImageData(new ImageData(buf, W, H), 0, 0);
-  downloadCanvas(cv, `composite_${state.collCount}faces_${W}x${H}.png`);
+  downloadCanvas(cv, `composite_${state.collCaptures.length}faces_${W}x${H}.png`);
+});
+$('#collStrip').addEventListener('click', saveCollectiveComparisonStrip);
+$('#collTimelapse').addEventListener('click', exportCollectiveTimelapse);
+
+// Reset
+$('#collReset').addEventListener('click', () => {
+  state.collComposite = null;
+  state.collCanonical = null;
+  state.collTriangles = null;
+  state.collCaptures = [];
+  state.collViewStep = 0;
+  $('#collCount').innerHTML = '<strong>0</strong> faces in composite';
+  updateCollHistoryControls();
+  renderCollective();
 });
 $('#faceSave').addEventListener('click', () => {
   if (!state.faceLastImg) { alert('Nothing to save yet — start face tracking first.'); return; }
@@ -13379,37 +13472,248 @@ function captureCollective() {
     p.y * fullH,
   ]);
   // First capture: establish canonical template.
-  if (state.collCount === 0 || !state.collCanonical) {
+  if (state.collCaptures.length === 0 || !state.collCanonical) {
     state.collCanonical = computeCollectiveCanonical(srcLms, W, H);
-    state.collComposite = null;   // freshly allocated below
   }
   const canon = state.collCanonical;
-  // Warp the source face to canonical positions into an output canvas.
+  // Determine which triangles to draw based on the capture region.
+  const regionSet = FACE_FEATURE_GROUPS[state.collCaptureRegion];   // null for 'full' → all
+  const triangleAllowed = (a, b, c) => {
+    if (!regionSet) return true;
+    return regionSet.has(a) && regionSet.has(b) && regionSet.has(c);
+  };
+  // Warp the source face triangles → canonical into an aligned canvas.
   const aligned = document.createElement('canvas');
   aligned.width = W; aligned.height = H;
   const actx = aligned.getContext('2d');
   actx.fillStyle = '#000';
   actx.fillRect(0, 0, W, H);
   for (const [a, b, c] of state.collTriangles) {
+    if (!triangleAllowed(a, b, c)) continue;
     warpTriangleDraw(actx, src, [srcLms[a], srcLms[b], srcLms[c]], [canon[a], canon[b], canon[c]]);
   }
-  const newPixels = actx.getImageData(0, 0, W, H).data;
-  // Blend into the running average composite.
-  if (!state.collComposite) {
-    state.collComposite = new Float32Array(W * H * 4);
-    for (let i = 0; i < newPixels.length; i++) state.collComposite[i] = newPixels[i];
-  } else {
-    const n = state.collCount + 1;
-    const keep = (n - 1) / n;
-    const blend = 1 / n;
-    const acc = state.collComposite;
-    for (let i = 0; i < newPixels.length; i++) {
-      acc[i] = acc[i] * keep + newPixels[i] * blend;
+  // Build a binary alpha mask (1 wherever ANY allowed triangle covers the pixel).
+  const maskCv = document.createElement('canvas');
+  maskCv.width = W; maskCv.height = H;
+  const mctx = maskCv.getContext('2d');
+  mctx.fillStyle = '#000';
+  mctx.fillRect(0, 0, W, H);
+  mctx.fillStyle = '#fff';
+  for (const [a, b, c] of state.collTriangles) {
+    if (!triangleAllowed(a, b, c)) continue;
+    mctx.beginPath();
+    mctx.moveTo(canon[a][0], canon[a][1]);
+    mctx.lineTo(canon[b][0], canon[b][1]);
+    mctx.lineTo(canon[c][0], canon[c][1]);
+    mctx.closePath();
+    mctx.fill();
+  }
+  const maskRGBA = mctx.getImageData(0, 0, W, H).data;
+  const mask = new Uint8Array(W * H);
+  for (let i = 0, p = 0; i < W * H; i++, p += 4) {
+    mask[i] = maskRGBA[p] > 127 ? 1 : 0;
+  }
+  // Snapshot the warped pixels.
+  const pixels = new Uint8ClampedArray(actx.getImageData(0, 0, W, H).data);
+  // Push to capture list.
+  const label = (state.collCaptureLabel || '').trim() || `face ${state.collCaptures.length + 1}`;
+  state.collCaptures.push({
+    pixels, mask,
+    weight: clamp(state.collCaptureWeight, 0.1, 5),
+    label,
+    region: state.collCaptureRegion,
+  });
+  // Auto-clear the label field so the next person can type theirs.
+  const labelInput = document.getElementById('collCapLabel');
+  if (labelInput) labelInput.value = '';
+  state.collCaptureLabel = '';
+  // View-step always jumps to latest after a fresh capture.
+  state.collViewStep = state.collCaptures.length;
+  recomputeCompositeAtStep(state.collViewStep);
+  updateCollHistoryControls();
+  $('#collCount').innerHTML = `<strong>${state.collCaptures.length}</strong> face${state.collCaptures.length === 1 ? '' : 's'} in composite`;
+  renderCollective();
+}
+
+// Per-pixel weighted average across captures[0..limit-1].
+// Honors per-capture weight and per-pixel mask, so partial-face captures
+// (Frankenstein mode) only contribute to the pixels they covered.
+function recomputeCompositeAtStep(limit) {
+  const W = state.collW, H = state.collH;
+  const N = W * H;
+  if (!state.collCaptures.length) {
+    state.collComposite = null;
+    return;
+  }
+  const cap = state.collCaptures.slice(0, Math.max(0, Math.min(limit, state.collCaptures.length)));
+  if (cap.length === 0) { state.collComposite = null; return; }
+  const sumR = new Float32Array(N);
+  const sumG = new Float32Array(N);
+  const sumB = new Float32Array(N);
+  const sumW = new Float32Array(N);
+  for (const c of cap) {
+    const w = c.weight;
+    const px = c.pixels, mk = c.mask;
+    for (let i = 0, p = 0; i < N; i++, p += 4) {
+      if (!mk[i]) continue;
+      sumR[i] += px[p    ] * w;
+      sumG[i] += px[p + 1] * w;
+      sumB[i] += px[p + 2] * w;
+      sumW[i] += w;
     }
   }
-  state.collCount++;
-  $('#collCount').innerHTML = `<strong>${state.collCount}</strong> face${state.collCount === 1 ? '' : 's'} in composite · each contributes ${(100 / state.collCount).toFixed(1)}%`;
+  const out = new Float32Array(N * 4);
+  for (let i = 0, p = 0; i < N; i++, p += 4) {
+    if (sumW[i] > 0) {
+      const inv = 1 / sumW[i];
+      out[p    ] = sumR[i] * inv;
+      out[p + 1] = sumG[i] * inv;
+      out[p + 2] = sumB[i] * inv;
+      out[p + 3] = 255;
+    }
+  }
+  state.collComposite = out;
+}
+
+function updateCollHistoryControls() {
+  const slider = document.getElementById('collViewStep');
+  const label = document.getElementById('collViewStepVal');
+  const undo = document.getElementById('collUndo');
+  const N = state.collCaptures.length;
+  if (slider) {
+    slider.max = Math.max(1, N);
+    slider.value = state.collViewStep || N;
+    slider.disabled = N === 0;
+  }
+  if (label) {
+    if (N === 0) label.textContent = '—';
+    else if (state.collViewStep === N) label.textContent = `latest (n=${N})`;
+    else label.textContent = `n=${state.collViewStep}`;
+  }
+  if (undo) undo.disabled = N === 0;
+}
+
+// === Comparison strip export ===
+function saveCollectiveComparisonStrip() {
+  const N = state.collCaptures.length;
+  if (N < 2) { alert('Need at least 2 captures to compare.'); return; }
+  // Log-spaced steps up to N (e.g. 1, 2, 4, 8, ..., N).
+  const stepsSet = new Set();
+  for (let s = 1; s < N; s *= 2) stepsSet.add(s);
+  stepsSet.add(N);
+  const steps = [...stepsSet].sort((a, b) => a - b);
+  const W = state.collW, H = state.collH;
+  const labelH = 32;
+  const gap = 10;
+  const totalW = steps.length * W + (steps.length - 1) * gap;
+  const totalH = H + labelH;
+  const cv = document.createElement('canvas');
+  cv.width = totalW; cv.height = totalH;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#0c0c10';
+  ctx.fillRect(0, 0, totalW, totalH);
+  ctx.font = 'bold 14px system-ui, sans-serif';
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  // Save current view step to restore after.
+  const restoreStep = state.collViewStep;
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    recomputeCompositeAtStep(step);
+    if (!state.collComposite) continue;
+    const buf = new Uint8ClampedArray(W * H * 4);
+    for (let k = 0; k < buf.length; k++) buf[k] = state.collComposite[k];
+    const tmp = document.createElement('canvas');
+    tmp.width = W; tmp.height = H;
+    tmp.getContext('2d').putImageData(new ImageData(buf, W, H), 0, 0);
+    const x = i * (W + gap);
+    ctx.drawImage(tmp, x, 0);
+    ctx.fillText(`n=${step}`, x + W / 2, H + labelH / 2);
+  }
+  // Restore the user's view.
+  recomputeCompositeAtStep(restoreStep);
   renderCollective();
+  downloadCanvas(cv, `composite_comparison_${N}faces.png`);
+}
+
+// === Time-lapse export ===
+async function exportCollectiveTimelapse() {
+  const N = state.collCaptures.length;
+  if (N < 2) { alert('Need at least 2 captures for a time-lapse.'); return; }
+  if (typeof MediaRecorder === 'undefined') {
+    alert('Your browser does not support MediaRecorder. Use the comparison strip instead.');
+    return;
+  }
+  const W = state.collW, H = state.collH;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  const stream = cv.captureStream(30);
+  // Try VP9, then VP8, then default.
+  let recorder = null;
+  const opts = [
+    { mimeType: 'video/webm;codecs=vp9' },
+    { mimeType: 'video/webm;codecs=vp8' },
+    { mimeType: 'video/webm' },
+    {},
+  ];
+  for (const o of opts) {
+    try {
+      if (!o.mimeType || MediaRecorder.isTypeSupported(o.mimeType)) {
+        recorder = new MediaRecorder(stream, o);
+        break;
+      }
+    } catch (_) {}
+  }
+  if (!recorder) {
+    alert('MediaRecorder could not initialize. Use the comparison strip instead.');
+    return;
+  }
+  const chunks = [];
+  recorder.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+  const stopPromise = new Promise(res => { recorder.onstop = () => res(); });
+  recorder.start(100);
+  // Save current view step to restore after.
+  const restoreStep = state.collViewStep;
+  // Hold each frame for ~250 ms (4 fps effective playback).
+  const FRAME_HOLD_MS = 250;
+  for (let k = 1; k <= N; k++) {
+    recomputeCompositeAtStep(k);
+    const buf = new Uint8ClampedArray(W * H * 4);
+    for (let i = 0; i < buf.length; i++) buf[i] = state.collComposite[i];
+    ctx.putImageData(new ImageData(buf, W, H), 0, 0);
+    // Step badge + current label
+    const cap = state.collCaptures[k - 1];
+    ctx.save();
+    ctx.font = 'bold 18px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(10, 10, 90, 32);
+    ctx.fillStyle = 'rgba(255,225,120,1)';
+    ctx.fillText('n=' + k, 18, 26);
+    // Label at the bottom
+    const lab = cap?.label || `face ${k}`;
+    ctx.font = '14px system-ui, sans-serif';
+    const tw = ctx.measureText(lab).width + 24;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(10, H - 38, tw, 28);
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(lab, 22, H - 24);
+    ctx.restore();
+    await new Promise(r => setTimeout(r, FRAME_HOLD_MS));
+  }
+  // Hold the final frame ~1 sec for a satisfying end.
+  await new Promise(r => setTimeout(r, 1000));
+  recorder.stop();
+  await stopPromise;
+  // Restore the user's view.
+  recomputeCompositeAtStep(restoreStep);
+  renderCollective();
+  const blob = new Blob(chunks, { type: 'video/webm' });
+  await downloadBlobAsync(blob, `composite_timelapse_${N}faces.webm`);
 }
 
 function renderCollective() {
@@ -13475,7 +13779,8 @@ function renderCollective() {
     ctx.fill();
   }
   // Count badge (top-left).
-  if (state.collCount > 0) {
+  const N = state.collCaptures.length;
+  if (N > 0) {
     ctx.save();
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillRect(10, 10, 64, 30);
@@ -13483,8 +13788,29 @@ function renderCollective() {
     ctx.font = 'bold 18px system-ui, sans-serif';
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
-    ctx.fillText('n=' + state.collCount, 42, 25);
+    const shown = state.collViewStep && state.collViewStep < N ? state.collViewStep : N;
+    ctx.fillText('n=' + shown, 42, 25);
     ctx.restore();
+  }
+  // Labels overlay (bottom).
+  if (state.collShowLabels && N > 0) {
+    const shown = state.collViewStep && state.collViewStep < N ? state.collViewStep : N;
+    const labels = state.collCaptures.slice(0, shown).map(c => c.label + (c.weight !== 1 ? ` (×${c.weight})` : '') + (c.region !== 'full' ? ` [${c.region}]` : ''));
+    const text = labels.join(' · ');
+    if (text) {
+      ctx.save();
+      ctx.font = '13px system-ui, sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      const tw = ctx.measureText(text).width + 28;
+      const bx = W / 2 - Math.min(tw, W - 20) / 2;
+      const bw = Math.min(tw, W - 20);
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(bx, H - 38, bw, 28);
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.fillText(text, W / 2, H - 24);
+      ctx.restore();
+    }
   }
 }
 
