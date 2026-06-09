@@ -2608,8 +2608,10 @@ const state = {
   collCaptureRegion: 'full',
   collCaptureLabel: '',
   collFeatherPx: 14,            // gaussian-blur radius for region mask edges
-  collIncludeBackground: true,  // ON: warp whole frame (background included). OFF: face-only on black.
-  collTrianglesFull: null,      // Delaunay triangles for face landmarks + frame anchors
+  collIncludeBackground: true,  // ON: include background. OFF: face-only on black.
+  collTrianglesFull: null,      // legacy (unused after similarity-transform refactor)
+  collTargetEyeMid: null,       // [x, y] in output coords — where every capture's eye-midpoint lands
+  collTargetEyeDist: 0,         // inter-eye distance in output pixels (sets the scale)
 
   // Layers — value-quantized stack for layered paper sculpture
   layLevels: 5,
@@ -13415,106 +13417,35 @@ async function collectiveLoop() {
   state.collRAF = requestAnimationFrame(collectiveLoop);
 }
 
-// Compute canonical landmark positions: rotate eyes horizontal, center, scale.
-// Triangulate once and cache.
+// Compute the canonical landmark positions by SIMILARITY transform — translate,
+// rotate, scale only (no mesh deformation). This is set from the first capture's
+// face and held constant for subsequent captures so every face passes through the
+// same transform parameters → faces line up at the eyes and stay in their natural
+// shape (no Frankenstein stretching).
 function computeCollectiveCanonical(srcLms, W, H) {
-  // Face axis from outer eye corners.
   const eyeR = srcLms[FACE_EYE_R_OUTER];
   const eyeL = srcLms[FACE_EYE_L_OUTER];
-  const angle = Math.atan2(eyeL[1] - eyeR[1], eyeL[0] - eyeR[0]);
-  const cosA = Math.cos(-angle), sinA = Math.sin(-angle);
-  // Centroid before rotation.
-  let cx = 0, cy = 0;
-  for (const [x, y] of srcLms) { cx += x; cy += y; }
-  cx /= srcLms.length; cy /= srcLms.length;
-  // Rotate landmarks around centroid to align eyes horizontally.
-  const rotated = srcLms.map(([x, y]) => {
-    const dx = x - cx, dy = y - cy;
-    return [dx * cosA - dy * sinA, dx * sinA + dy * cosA];
+  const srcEyeMid = [(eyeR[0] + eyeL[0]) / 2, (eyeR[1] + eyeL[1]) / 2];
+  const srcEyeDist = Math.hypot(eyeL[0] - eyeR[0], eyeL[1] - eyeR[1]) || 1;
+  const srcEyeAngle = Math.atan2(eyeL[1] - eyeR[1], eyeL[0] - eyeR[0]);
+  // Target: place the eye midpoint at (W/2, ~40% from top) and set inter-eye
+  // distance proportional to the face-scale slider.
+  state.collTargetEyeDist = Math.min(W, H) * state.collFaceScale * 0.32;
+  state.collTargetEyeMid = [W / 2, H * 0.42];
+  // Apply the similarity transform to all landmarks to get canonical positions
+  // (used by region polygons for Frankenstein masking).
+  const scale = state.collTargetEyeDist / srcEyeDist;
+  const cosA = Math.cos(-srcEyeAngle), sinA = Math.sin(-srcEyeAngle);
+  const canonical = srcLms.map(([x, y]) => {
+    const tx = x - srcEyeMid[0], ty = y - srcEyeMid[1];
+    const rx = tx * cosA - ty * sinA, ry = tx * sinA + ty * cosA;
+    return [state.collTargetEyeMid[0] + rx * scale, state.collTargetEyeMid[1] + ry * scale];
   });
-  // Bbox of rotated → scale to fit target face size.
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const [x, y] of rotated) {
-    if (x < minX) minX = x; if (x > maxX) maxX = x;
-    if (y < minY) minY = y; if (y > maxY) maxY = y;
-  }
-  const faceSize = Math.max(maxX - minX, maxY - minY);
-  const targetSize = Math.min(W, H) * state.collFaceScale;
-  const scale = targetSize / Math.max(1, faceSize);
-  const rotCx = (minX + maxX) / 2;
-  const rotCy = (minY + maxY) / 2;
-  const canonical = rotated.map(([x, y]) => [
-    (x - rotCx) * scale + W / 2,
-    (y - rotCy) * scale + H / 2,
-  ]);
-  // Triangulate canonical landmarks (stable across captures).
-  const N = canonical.length;
-  const flat = new Float64Array(N * 2);
-  for (let i = 0; i < N; i++) { flat[i * 2] = canonical[i][0]; flat[i * 2 + 1] = canonical[i][1]; }
-  let d;
-  try { d = new window._Delaunator(flat); } catch (_) { return canonical; }
-  const tri = d.triangles;
-  const maxEdge = targetSize * 0.35;
-  const maxEdge2 = maxEdge * maxEdge;
-  const triangles = [];
-  for (let t = 0; t < tri.length; t += 3) {
-    const a = tri[t], b = tri[t + 1], c = tri[t + 2];
-    const A = canonical[a], B = canonical[b], C = canonical[c];
-    const ab2 = (A[0]-B[0])**2 + (A[1]-B[1])**2;
-    const bc2 = (B[0]-C[0])**2 + (B[1]-C[1])**2;
-    const ca2 = (C[0]-A[0])**2 + (C[1]-A[1])**2;
-    if (ab2 > maxEdge2 || bc2 > maxEdge2 || ca2 > maxEdge2) continue;
-    triangles.push([a, b, c]);
-  }
-  state.collTriangles = triangles;
-  // Also build an extended triangulation that includes 12 perimeter anchor
-  // points at the output frame edges. Used when "Include background" is on
-  // so the whole camera frame can be warped (face goes to canonical, the
-  // background flows around it).
-  const anchors = _collFrameAnchors(W, H);
-  const fullDst = canonical.concat(anchors);
-  const flatFull = new Float64Array(fullDst.length * 2);
-  for (let i = 0; i < fullDst.length; i++) {
-    flatFull[i * 2] = fullDst[i][0];
-    flatFull[i * 2 + 1] = fullDst[i][1];
-  }
-  let df;
-  try { df = new window._Delaunator(flatFull); }
-  catch (_) { df = null; }
-  if (df) {
-    const triFull = df.triangles;
-    // No max-edge filter here — large triangles bridging the face to the frame
-    // edges are intentional (that's how background gets covered).
-    const trianglesFull = [];
-    for (let t = 0; t < triFull.length; t += 3) {
-      trianglesFull.push([triFull[t], triFull[t + 1], triFull[t + 2]]);
-    }
-    state.collTrianglesFull = trianglesFull;
-  } else {
-    state.collTrianglesFull = null;
-  }
+  // No triangulation needed — similarity transform is applied directly via
+  // Canvas2D's setTransform when each frame is drawn.
+  state.collTriangles = null;
+  state.collTrianglesFull = null;
   return canonical;
-}
-
-// 12 evenly-spaced anchor points around the output frame perimeter
-// (corners + 2 per edge). In source coords these map to the camera frame
-// perimeter (set at capture time); in dst coords they are at fixed
-// output-canvas perimeter positions so the frame edges stay rectangular.
-function _collFrameAnchors(W, H) {
-  return [
-    [0, 0], [W/3, 0], [2*W/3, 0], [W, 0],
-    [W, H/3], [W, 2*H/3],
-    [W, H], [2*W/3, H], [W/3, H], [0, H],
-    [0, 2*H/3], [0, H/3],
-  ];
-}
-function _collSourceAnchors(fullW, fullH) {
-  return [
-    [0, 0], [fullW/3, 0], [2*fullW/3, 0], [fullW, 0],
-    [fullW, fullH/3], [fullW, 2*fullH/3],
-    [fullW, fullH], [2*fullW/3, fullH], [fullW/3, fullH], [0, fullH],
-    [0, 2*fullH/3], [0, fullH/3],
-  ];
 }
 
 // === Region polygon definitions (canonical face mesh indices) ===
@@ -13625,32 +13556,32 @@ function captureCollective() {
     state.collCanonical = computeCollectiveCanonical(srcLms, W, H);
   }
   const canon = state.collCanonical;
-  // Warp into aligned canvas. Two paths:
-  // - Include background ON: extended mesh (face landmarks + 12 frame perimeter anchors).
-  //   Every triangle is warped, so the whole frame ends up on the output canvas with
-  //   the face moved to canonical position and the background flowing around it.
-  // - Include background OFF: face-only triangles, black background (original behavior).
+  // Apply the SIMILARITY TRANSFORM (translate + rotate + scale only — no mesh
+  // deformation). Every capture's eye midpoint lands at the same target, every
+  // capture's eye axis is rotated horizontal, every capture's inter-eye distance
+  // is scaled to the same target. Face proportions are preserved — no warping.
+  const eyeR = srcLms[FACE_EYE_R_OUTER];
+  const eyeL = srcLms[FACE_EYE_L_OUTER];
+  const srcEyeMid = [(eyeR[0] + eyeL[0]) / 2, (eyeR[1] + eyeL[1]) / 2];
+  const srcEyeDist = Math.hypot(eyeL[0] - eyeR[0], eyeL[1] - eyeR[1]) || 1;
+  const srcEyeAngle = Math.atan2(eyeL[1] - eyeR[1], eyeL[0] - eyeR[0]);
+  const sScale = state.collTargetEyeDist / srcEyeDist;
+
   const aligned = document.createElement('canvas');
   aligned.width = W; aligned.height = H;
   const actx = aligned.getContext('2d');
   actx.fillStyle = '#000';
   actx.fillRect(0, 0, W, H);
-  if (state.collIncludeBackground && state.collTrianglesFull) {
-    const srcAnchors = _collSourceAnchors(fullW, fullH);
-    const dstAnchors = _collFrameAnchors(W, H);
-    const allSrc = srcLms.concat(srcAnchors);
-    const allDst = canon.concat(dstAnchors);
-    for (const [a, b, c] of state.collTrianglesFull) {
-      warpTriangleDraw(actx, src,
-        [allSrc[a], allSrc[b], allSrc[c]],
-        [allDst[a], allDst[b], allDst[c]]);
-    }
-  } else {
-    for (const [a, b, c] of state.collTriangles) {
-      warpTriangleDraw(actx, src, [srcLms[a], srcLms[b], srcLms[c]], [canon[a], canon[b], canon[c]]);
-    }
-  }
-  // Build the region mask. Special case: full + include-background → entire canvas.
+  actx.save();
+  actx.translate(state.collTargetEyeMid[0], state.collTargetEyeMid[1]);
+  actx.rotate(-srcEyeAngle);
+  actx.scale(sScale, sScale);
+  actx.translate(-srcEyeMid[0], -srcEyeMid[1]);
+  actx.drawImage(src, 0, 0);
+  actx.restore();
+
+  // Build the region mask. Special case: full + include-background → entire canvas
+  // contributes (so backgrounds blend into the composite too).
   let mask;
   if (state.collCaptureRegion === 'full' && state.collIncludeBackground) {
     mask = new Uint8Array(W * H).fill(255);
