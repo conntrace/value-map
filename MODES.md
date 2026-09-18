@@ -93,6 +93,12 @@ Single-file web app at `value-map-app/index.html`. Each mode below renders a scr
 **Output**: SVG (single closed ribbon polygon).
 **Use**: laser engrave, pen plot, or print and paint as a single continuous shape.
 
+### Pattern
+**What it does**: the Spiral/Cut idea generalised — pick the path family and the image is rebuilt in line thickness along it. Sixteen generators: spiral, concentric rings/squares/polygons, radial rays, phyllotaxis rosette, serpentine, horizontal/vertical/diagonal rules, woven grid, sine, zigzag, Lissajous, rose curve, Hilbert curve, and **custom** — draw your own mark on a pad (freehand, line, rect, ellipse) and repeat it as drawn, tiled, radially, or mirrored.
+**Controls**: spacing, sample step, min/max thickness, response curve, drop-below threshold (true white), direction, pattern rotation, center offset, wobble amplitude/frequency/phase, jitter, stroke vs. ribbon-outline render, line cap, colors.
+**Output**: SVG — variable-width strokes, or closed ribbon outlines.
+**Use**: pen plot, laser engrave, vinyl cut (use Ribbon outline), or print.
+
 ### Flow
 **What it does**: streamlines tangent to luminance gradient — lines bend around image features.
 **Output**: SVG (set of polylines).
@@ -161,7 +167,7 @@ These produce art directly from the image; no per-cell instructions:
 - Pixel sort, Glitch
 
 ## Vector cuttable / plottable modes
-- Cut, Dither (stencil), Contour, TSP, Spiral, Flow, Brush, Hex (palette), Tile (palette), Triangle (palette), Low-poly (palette), Layers
+- Cut, Dither (stencil), Contour, TSP, Spiral, Pattern, Flow, Brush, Hex (palette), Tile (palette), Triangle (palette), Low-poly (palette), Layers
 
 ## Paint-by-number numbered grids
 - Values, Palette, Arc, Zones, Dots, Hatch, Stipple, Pixel art (palette → cross-stitch), Bead, Hex/Tile/Tri/Low-poly (in palette mode)

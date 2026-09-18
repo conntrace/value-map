@@ -570,6 +570,7 @@
           <button data-mode="tsp">TSP</button>
           <button data-mode="psort">Pixel sort</button>
           <button data-mode="spiral">Spiral</button>
+          <button data-mode="pattern">Pattern</button>
           <button data-mode="flow">Flow</button>
           <button data-mode="brush">Brush</button>
           <button data-mode="hex">Hex</button>
@@ -1849,6 +1850,260 @@
           </div>
         </div>
 
+        <div id="mode-pattern" style="display: none;">
+          <label class="field">Pattern</label>
+          <select id="patShape" style="margin-bottom: 10px;">
+            <optgroup label="Radial">
+              <option value="spiral">Spiral</option>
+              <option value="rings">Concentric rings</option>
+              <option value="squares">Concentric squares</option>
+              <option value="poly">Concentric polygons</option>
+              <option value="rays">Radial rays</option>
+              <option value="phyllo">Phyllotaxis arcs</option>
+            </optgroup>
+            <optgroup label="Linear">
+              <option value="serpentine">Serpentine (one line)</option>
+              <option value="hlines">Horizontal lines</option>
+              <option value="vlines">Vertical lines</option>
+              <option value="diag">Diagonal lines</option>
+              <option value="grid">Woven grid</option>
+              <option value="sine">Sine waves</option>
+              <option value="zigzag">Zigzag</option>
+            </optgroup>
+            <optgroup label="Curves">
+              <option value="lissajous">Lissajous</option>
+              <option value="rose">Rose curve</option>
+              <option value="hilbert">Hilbert curve</option>
+            </optgroup>
+            <optgroup label="Yours">
+              <option value="custom">Custom — draw it</option>
+            </optgroup>
+          </select>
+          <div class="hint" style="margin-bottom: 12px;">The path the ink follows. Thickness along that path carries the value.</div>
+
+          <!-- Custom draw surface -->
+          <div id="pat-custom" style="display:none; margin-bottom: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 4px; background: #FBF7EF;">
+            <label class="field">Draw your mark</label>
+            <div class="hint" style="margin-bottom: 8px;">Drag on the pad. Your photo shows through as a guide.</div>
+            <canvas id="patDrawCanvas" width="280" height="280"
+              style="width:100%; height:auto; display:block; border:1px solid var(--line); border-radius:4px; background:#fff; cursor:crosshair; touch-action:none;"></canvas>
+            <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; align-items:center;">
+              <div class="toggle" id="pat-tool">
+                <button data-tool="free" class="on">Freehand</button>
+                <button data-tool="line">Line</button>
+                <button data-tool="rect">Rect</button>
+                <button data-tool="ellipse">Ellipse</button>
+              </div>
+              <button class="btn" id="patUndo" style="padding:6px 10px; font-size:11px;">Undo</button>
+              <button class="btn" id="patClear" style="padding:6px 10px; font-size:11px;">Clear</button>
+            </div>
+            <div style="margin-top:10px;">
+              <label class="field">Repeat</label>
+              <div class="toggle" id="pat-custom-mode">
+                <button data-cm="trace" class="on">As drawn</button>
+                <button data-cm="tile">Tile</button>
+                <button data-cm="radial">Radial</button>
+                <button data-cm="mirror">Mirror</button>
+              </div>
+            </div>
+            <div id="pat-custom-tile" style="display:none; margin-top:10px;">
+              <div class="row" style="margin-bottom: 8px;">
+                <div>
+                  <label class="field">Columns</label>
+                  <input type="number" id="patTileCols" min="1" max="60" value="6" />
+                </div>
+                <div>
+                  <label class="field">Rows</label>
+                  <input type="number" id="patTileRows" min="1" max="60" value="6" />
+                </div>
+              </div>
+              <div class="row">
+                <div>
+                  <label class="field">Tile scale %</label>
+                  <input type="number" id="patTileScale" min="10" max="200" value="100" />
+                </div>
+                <div>
+                  <label class="field">Turn / tile °</label>
+                  <input type="number" id="patTileRot" min="-180" max="180" value="0" />
+                </div>
+              </div>
+            </div>
+            <div id="pat-custom-radial" style="display:none; margin-top:10px;">
+              <label class="field">Copies around center</label>
+              <input type="number" id="patRadialCopies" min="2" max="120" value="12" />
+            </div>
+          </div>
+
+          <label class="field">Pixel width</label>
+          <input type="number" id="patWidth" min="120" max="900" value="360" />
+          <div class="hint" style="margin-bottom: 10px;">Process resolution.</div>
+
+          <div class="row" style="margin-bottom: 10px;">
+            <div>
+              <label class="field">Spacing</label>
+              <input type="number" id="patSpacing" min="1" max="60" step="0.5" value="6" />
+            </div>
+            <div>
+              <label class="field">Step</label>
+              <input type="number" id="patStep" min="0.3" max="8" step="0.1" value="1.5" />
+            </div>
+          </div>
+          <div class="hint" style="margin-bottom: 10px;">Spacing = gap between passes. Step = how often value is re-read along the path.</div>
+
+          <!-- Pattern-specific -->
+          <div id="pat-extra-poly" style="display:none; margin-bottom: 10px;">
+            <label class="field">Sides / arms</label>
+            <input type="number" id="patSides" min="3" max="24" value="6" />
+          </div>
+          <div id="pat-extra-rays" style="display:none; margin-bottom: 10px;">
+            <label class="field">Ray count</label>
+            <input type="number" id="patRays" min="4" max="1200" value="180" />
+          </div>
+          <div id="pat-extra-liss" style="display:none; margin-bottom: 10px;">
+            <div class="row" style="margin-bottom: 8px;">
+              <div>
+                <label class="field">Freq A</label>
+                <input type="number" id="patLissA" min="1" max="30" step="0.5" value="3" />
+              </div>
+              <div>
+                <label class="field">Freq B</label>
+                <input type="number" id="patLissB" min="1" max="30" step="0.5" value="4" />
+              </div>
+            </div>
+            <div class="row">
+              <div>
+                <label class="field">Phase °</label>
+                <input type="number" id="patLissD" min="0" max="360" value="90" />
+              </div>
+              <div>
+                <label class="field">Turns</label>
+                <input type="number" id="patLissTurns" min="1" max="400" value="60" />
+              </div>
+            </div>
+          </div>
+          <div id="pat-extra-rose" style="display:none; margin-bottom: 10px;">
+            <div class="row">
+              <div>
+                <label class="field">Petal ratio k</label>
+                <input type="number" id="patPetals" min="0.1" max="30" step="0.1" value="5" />
+              </div>
+              <div>
+                <label class="field">Turns</label>
+                <input type="number" id="patRoseTurns" min="1" max="200" value="24" />
+              </div>
+            </div>
+          </div>
+          <div id="pat-extra-hilbert" style="display:none; margin-bottom: 10px;">
+            <label class="field">Order</label>
+            <input type="number" id="patHilbert" min="2" max="9" value="6" />
+            <div class="hint">Each order doubles the curve's density.</div>
+          </div>
+          <div id="pat-extra-center" style="display:none; margin-bottom: 10px;">
+            <div class="row">
+              <div>
+                <label class="field">Center X %</label>
+                <input type="number" id="patCenterX" min="-50" max="150" value="50" />
+              </div>
+              <div>
+                <label class="field">Center Y %</label>
+                <input type="number" id="patCenterY" min="-50" max="150" value="50" />
+              </div>
+            </div>
+          </div>
+
+          <label class="field">Rotate pattern °</label>
+          <input type="number" id="patRotate" min="-180" max="180" value="0" />
+          <div class="hint" style="margin-bottom: 12px;">Spins the whole pattern about the center.</div>
+
+          <div class="row" style="margin-bottom: 10px;">
+            <div>
+              <label class="field">Min thickness</label>
+              <input type="number" id="patMin" min="0" max="30" step="0.1" value="0.2" />
+            </div>
+            <div>
+              <label class="field">Max thickness</label>
+              <input type="number" id="patMax" min="0.2" max="60" step="0.1" value="4" />
+            </div>
+          </div>
+          <div class="row" style="margin-bottom: 10px;">
+            <div>
+              <label class="field">Response</label>
+              <input type="number" id="patGamma" min="0.2" max="4" step="0.05" value="1" />
+            </div>
+            <div>
+              <label class="field">Drop below</label>
+              <input type="number" id="patCull" min="0" max="30" step="0.1" value="0" />
+            </div>
+          </div>
+          <div class="hint" style="margin-bottom: 10px;">Response bends the value curve (&lt;1 opens shadows, &gt;1 opens highlights). Drop below erases strokes thinner than this, leaving true white.</div>
+
+          <div style="margin-bottom: 12px;">
+            <label class="field">Direction</label>
+            <div class="toggle" id="pat-dir">
+              <button data-dir="dark-thick" class="on">Dark = thick</button>
+              <button data-dir="dark-thin">Dark = thin</button>
+            </div>
+          </div>
+
+          <div class="row" style="margin-bottom: 10px;">
+            <div>
+              <label class="field">Wobble amp</label>
+              <input type="number" id="patAmp" min="0" max="60" step="0.5" value="0" />
+            </div>
+            <div>
+              <label class="field">Wobble freq</label>
+              <input type="number" id="patFreq" min="0.1" max="40" step="0.1" value="3" />
+            </div>
+          </div>
+          <div class="row" style="margin-bottom: 10px;">
+            <div>
+              <label class="field">Phase / pass °</label>
+              <input type="number" id="patPhase" min="-360" max="360" value="45" />
+            </div>
+            <div>
+              <label class="field">Jitter</label>
+              <input type="number" id="patJitter" min="0" max="20" step="0.1" value="0" />
+            </div>
+          </div>
+          <div class="hint" style="margin-bottom: 12px;">Wobble rides a wave across every path — it is the whole shape for Sine and Zigzag, and a hand-drawn tremble on the rest.</div>
+
+          <div style="margin-bottom: 10px;">
+            <label class="field">Render as</label>
+            <div class="toggle" id="pat-render">
+              <button data-render="stroke" class="on">Stroke</button>
+              <button data-render="ribbon">Ribbon outline</button>
+            </div>
+            <div class="hint" style="margin-top: 6px;">Ribbon gives closed outlines — what you want for cutting or plotting.</div>
+          </div>
+
+          <div style="margin-bottom: 10px;">
+            <label class="field">Line cap</label>
+            <div class="toggle" id="pat-cap">
+              <button data-cap="round" class="on">Round</button>
+              <button data-cap="butt">Flat</button>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 10px;">
+            <label class="field">Stroke color</label>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <label class="swatch-chip" style="background:#1A1A1A;">
+                <input type="color" id="patFgPicker" value="#1A1A1A" />
+              </label>
+              <input type="text" class="swatch-hex" id="patFgHex" value="#1A1A1A" maxlength="7" />
+            </div>
+          </div>
+          <div>
+            <label class="field">Background</label>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <label class="swatch-chip" style="background:#FBF7EF;">
+                <input type="color" id="patBgPicker" value="#FBF7EF" />
+              </label>
+              <input type="text" class="swatch-hex" id="patBgHex" value="#FBF7EF" maxlength="7" />
+            </div>
+          </div>
+        </div>
+
         <div id="mode-psort" style="display: none;">
           <div class="hint" style="margin-bottom: 12px; padding: 8px 10px; background:#FBF7EF; border-left: 3px solid #C4452B;">
             <strong>Final-output mode.</strong> The PNG <em>is</em> the artwork — there's no per-cell instruction layer. Print, frame, post.
@@ -2805,6 +3060,45 @@ const state = {
   spiFg: '#1A1A1A',
   spiBg: '#FBF7EF',
   spiData: null,            // { w, h, polygon: [[x,y], ...] }
+
+  // Pattern — pick a path family, value rides on line thickness
+  patWidth: 360,
+  patShape: 'spiral',
+  patSpacing: 6,
+  patStep: 1.5,
+  patMin: 0.2,
+  patMax: 4,
+  patGamma: 1,
+  patCull: 0,
+  patDir: 'dark-thick',     // 'dark-thick' | 'dark-thin'
+  patRotate: 0,
+  patCenterX: 50,
+  patCenterY: 50,
+  patAmp: 0,
+  patFreq: 3,
+  patPhase: 45,
+  patJitter: 0,
+  patSides: 6,
+  patRays: 180,
+  patLissA: 3,
+  patLissB: 4,
+  patLissD: 90,
+  patLissTurns: 60,
+  patPetals: 5,
+  patRoseTurns: 24,
+  patHilbert: 6,
+  patRender: 'stroke',      // 'stroke' | 'ribbon'
+  patCap: 'round',
+  patFg: '#1A1A1A',
+  patBg: '#FBF7EF',
+  patStrokes: [],           // custom marks, normalized [[x,y], ...] in 0..1
+  patCustomMode: 'trace',   // 'trace' | 'tile' | 'radial' | 'mirror'
+  patTileCols: 6,
+  patTileRows: 6,
+  patTileScale: 100,
+  patTileRot: 0,
+  patRadialCopies: 12,
+  patData: null,            // { w, h, paths: [{points, thickness}, ...] }
 
   // Pixel sort
   psWidth: 360,
@@ -5054,6 +5348,529 @@ function buildSpiralSVG(data) {
   if (data.polygon.length > 2) {
     const pts = data.polygon.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
     lines.push(`  <polygon points="${pts}" fill="${state.spiFg}"/>`);
+  }
+  lines.push(`</svg>`);
+  return lines.join('\n');
+}
+
+/* =========================================================
+   Pattern — one thickness engine, many path families. Every generator
+   below just hands back polylines in image space; a shared pass reads
+   local value along each one and turns it into line weight.
+========================================================= */
+
+function patHash(a, b) {
+  let h = (Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263)) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+// Walk a polyline and emit points at even arc-length intervals.
+function patResample(points, step) {
+  if (points.length < 2) return points.map(p => p.slice());
+  const s = Math.max(0.1, step);
+  const out = [points[0].slice()];
+  let prev = points[0];
+  let leftover = 0;
+  for (let i = 1; i < points.length; i++) {
+    const cur = points[i];
+    const dx = cur[0] - prev[0], dy = cur[1] - prev[1];
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-9) { prev = cur; continue; }
+    const ux = dx / len, uy = dy / len;
+    let d = s - leftover;
+    while (d <= len) {
+      out.push([prev[0] + ux * d, prev[1] + uy * d]);
+      d += s;
+    }
+    leftover = len - (d - s);
+    prev = cur;
+  }
+  const last = points[points.length - 1];
+  const tail = out[out.length - 1];
+  if (Math.hypot(last[0] - tail[0], last[1] - tail[1]) > s * 0.25) out.push(last.slice());
+  return out;
+}
+
+// Liang–Barsky: trim a segment to the image box so nothing spills off-sheet.
+function patClipSegment(x0, y0, x1, y1, W, H) {
+  let t0 = 0, t1 = 1;
+  const dx = x1 - x0, dy = y1 - y0;
+  const p = [-dx, dx, -dy, dy];
+  const q = [x0, W - x0, y0, H - y0];
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) { if (q[i] < 0) return null; continue; }
+    const r = q[i] / p[i];
+    if (p[i] < 0) { if (r > t1) return null; if (r > t0) t0 = r; }
+    else { if (r < t0) return null; if (r < t1) t1 = r; }
+  }
+  return [x0 + t0 * dx, y0 + t0 * dy, x0 + t1 * dx, y0 + t1 * dy];
+}
+
+// Parallel rules at any angle, clipped to the box. Powers h/v/diagonal/grid.
+function patParallelLines(W, H, angleDeg, spacing, step, out, phaseSeed = 0) {
+  const a = angleDeg * Math.PI / 180;
+  const ux = Math.cos(a), uy = Math.sin(a);
+  const nx = -uy, ny = ux;
+  const cx = W / 2, cy = H / 2;
+  const span = Math.hypot(W, H);
+  const count = Math.ceil(span / spacing);
+  let idx = phaseSeed;
+  for (let i = -count; i <= count; i++) {
+    const off = i * spacing;
+    const mx = cx + nx * off, my = cy + ny * off;
+    const seg = patClipSegment(
+      mx - ux * span, my - uy * span,
+      mx + ux * span, my + uy * span, W, H
+    );
+    if (!seg) continue;
+    out.push({ pts: patResample([[seg[0], seg[1]], [seg[2], seg[3]]], step), i: idx++ });
+  }
+}
+
+function patCirclePath(cx, cy, r, step) {
+  const n = Math.max(12, Math.ceil((2 * Math.PI * r) / Math.max(0.3, step)));
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+  }
+  return pts;
+}
+
+function patRegularPolyPath(cx, cy, r, sides, rot, step) {
+  const corners = [];
+  for (let i = 0; i <= sides; i++) {
+    const a = rot + (i / sides) * Math.PI * 2;
+    corners.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+  }
+  return patResample(corners, step);
+}
+
+function patHilbertPath(x0, y0, w, h, order, step) {
+  const n = 1 << order;
+  const cellW = w / n, cellH = h / n;
+  const pts = [];
+  for (let d = 0; d < n * n; d++) {
+    let t = d, x = 0, y = 0;
+    for (let s = 1; s < n; s *= 2) {
+      const rx = 1 & (t >> 1);
+      const ry = 1 & (t ^ rx);
+      if (ry === 0) {
+        if (rx === 1) { x = s - 1 - x; y = s - 1 - y; }
+        const tmp = x; x = y; y = tmp;
+      }
+      x += s * rx;
+      y += s * ry;
+      t = Math.floor(t / 4);
+    }
+    pts.push([x0 + (x + 0.5) * cellW, y0 + (y + 0.5) * cellH]);
+  }
+  return patResample(pts, step);
+}
+
+// Map a normalized custom mark (0..1 square) into image space, with transform.
+function patPlaceStroke(stroke, ox, oy, sw, sh, rot, pivotX, pivotY) {
+  const cos = Math.cos(rot), sin = Math.sin(rot);
+  return stroke.map(([nx, ny]) => {
+    let x = ox + nx * sw;
+    let y = oy + ny * sh;
+    if (rot !== 0) {
+      const dx = x - pivotX, dy = y - pivotY;
+      x = pivotX + dx * cos - dy * sin;
+      y = pivotY + dx * sin + dy * cos;
+    }
+    return [x, y];
+  });
+}
+
+function patCustomPaths(W, H, step, out) {
+  const strokes = state.patStrokes;
+  if (!strokes.length) return;
+  const mode = state.patCustomMode;
+  let idx = 0;
+  const push = pts => {
+    if (pts.length >= 2) out.push({ pts: patResample(pts, step), i: idx++ });
+  };
+  if (mode === 'tile') {
+    const cols = clamp(state.patTileCols | 0, 1, 60);
+    const rows = clamp(state.patTileRows | 0, 1, 60);
+    const cw = W / cols, ch = H / rows;
+    const sc = clamp(state.patTileScale, 10, 200) / 100;
+    const rotStep = state.patTileRot * Math.PI / 180;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const sw = cw * sc, sh = ch * sc;
+        const ox = c * cw + (cw - sw) / 2;
+        const oy = r * ch + (ch - sh) / 2;
+        const rot = rotStep * (r * cols + c);
+        for (const s of strokes) push(patPlaceStroke(s, ox, oy, sw, sh, rot, ox + sw / 2, oy + sh / 2));
+      }
+    }
+  } else if (mode === 'radial') {
+    const n = clamp(state.patRadialCopies | 0, 2, 120);
+    const cx = W / 2, cy = H / 2;
+    for (let k = 0; k < n; k++) {
+      const rot = (k / n) * Math.PI * 2;
+      for (const s of strokes) push(patPlaceStroke(s, 0, 0, W, H, rot, cx, cy));
+    }
+  } else if (mode === 'mirror') {
+    for (const s of strokes) {
+      push(patPlaceStroke(s, 0, 0, W, H, 0, 0, 0));
+      push(s.map(([nx, ny]) => [(1 - nx) * W, ny * H]));
+      push(s.map(([nx, ny]) => [nx * W, (1 - ny) * H]));
+      push(s.map(([nx, ny]) => [(1 - nx) * W, (1 - ny) * H]));
+    }
+  } else {
+    for (const s of strokes) push(patPlaceStroke(s, 0, 0, W, H, 0, 0, 0));
+  }
+}
+
+function patBuildPaths(W, H) {
+  const step = clamp(state.patStep, 0.3, 8);
+  const spacing = Math.max(1, state.patSpacing);
+  const cx = W * (state.patCenterX / 100);
+  const cy = H * (state.patCenterY / 100);
+  const maxR = Math.max(
+    Math.hypot(cx, cy), Math.hypot(W - cx, cy),
+    Math.hypot(cx, H - cy), Math.hypot(W - cx, H - cy)
+  );
+  const out = [];
+  let idx = 0;
+  const push = pts => { if (pts.length >= 2) out.push({ pts, i: idx++ }); };
+
+  switch (state.patShape) {
+    case 'spiral': {
+      const k = spacing / (2 * Math.PI);
+      const pts = [];
+      let theta = 0;
+      let guard = 0;
+      while (guard++ < 2_000_000) {
+        const r = k * theta;
+        if (r > maxR + spacing) break;
+        pts.push([cx + r * Math.cos(theta), cy + r * Math.sin(theta)]);
+        const dx = k * Math.cos(theta) - r * Math.sin(theta);
+        const dy = k * Math.sin(theta) + r * Math.cos(theta);
+        theta += step / (Math.hypot(dx, dy) || 1);
+      }
+      push(pts);
+      break;
+    }
+    case 'rings': {
+      for (let r = spacing / 2; r <= maxR; r += spacing) push(patCirclePath(cx, cy, r, step));
+      break;
+    }
+    case 'squares': {
+      for (let r = spacing / 2; r <= maxR; r += spacing) {
+        push(patResample([
+          [cx - r, cy - r], [cx + r, cy - r], [cx + r, cy + r], [cx - r, cy + r], [cx - r, cy - r],
+        ], step));
+      }
+      break;
+    }
+    case 'poly': {
+      const sides = clamp(state.patSides | 0, 3, 24);
+      const twist = state.patPhase * Math.PI / 180;
+      let ring = 0;
+      for (let r = spacing / 2; r <= maxR; r += spacing) {
+        push(patRegularPolyPath(cx, cy, r, sides, twist * ring, step));
+        ring++;
+      }
+      break;
+    }
+    case 'rays': {
+      const n = clamp(state.patRays | 0, 4, 1200);
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const seg = patClipSegment(cx, cy, cx + Math.cos(a) * maxR, cy + Math.sin(a) * maxR, W, H);
+        if (seg) {
+          const pts = patResample([[seg[0], seg[1]], [seg[2], seg[3]]], step);
+          // Near the hub the rays are closer together than `spacing`; thin them
+          // by exactly how crowded they are, or the center fills in solid black.
+          const w = pts.map(([x, y]) => {
+            const r = Math.hypot(x - cx, y - cy);
+            return clamp((2 * Math.PI * r) / (n * spacing), 0, 1);
+          });
+          if (pts.length >= 2) out.push({ pts, w, i: idx++ });
+        }
+      }
+      break;
+    }
+    case 'phyllo': {
+      // Fermat spiral rosette (r = c√θ): the sunflower geometry drawn as
+      // continuous arms, rather than chaining seed points — chaining only
+      // stays coherent near the hub and turns to mud further out.
+      const arms = clamp(state.patSides | 0, 3, 24);
+      const turns = Math.max(1, maxR / (spacing * arms));
+      const thetaMax = turns * 2 * Math.PI;
+      const c = maxR / Math.sqrt(thetaMax);
+      for (let a = 0; a < arms; a++) {
+        const rot = (a / arms) * Math.PI * 2;
+        const pts = [];
+        let theta = 0.0001;
+        let guard = 0;
+        while (theta < thetaMax && guard++ < 400000) {
+          const r = c * Math.sqrt(theta);
+          pts.push([cx + r * Math.cos(theta + rot), cy + r * Math.sin(theta + rot)]);
+          // dr/dθ = c/(2√θ); arc-length step keeps sampling even.
+          const dr = c / (2 * Math.sqrt(theta));
+          theta += step / (Math.hypot(dr, r) || 1);
+        }
+        push(pts);
+      }
+      break;
+    }
+    case 'serpentine': {
+      const pts = [];
+      let flip = false;
+      for (let y = spacing / 2; y <= H; y += spacing) {
+        pts.push(flip ? [W, y] : [0, y]);
+        pts.push(flip ? [0, y] : [W, y]);
+        flip = !flip;
+      }
+      push(patResample(pts, step));
+      break;
+    }
+    case 'hlines': patParallelLines(W, H, 0, spacing, step, out); break;
+    case 'vlines': patParallelLines(W, H, 90, spacing, step, out); break;
+    case 'diag':   patParallelLines(W, H, 45, spacing, step, out); break;
+    case 'grid':
+      patParallelLines(W, H, 0, spacing, step, out);
+      patParallelLines(W, H, 90, spacing, step, out, 10000);
+      break;
+    case 'sine':
+    case 'zigzag': {
+      const amp = state.patAmp > 0 ? state.patAmp : spacing * 0.6;
+      const freq = Math.max(0.1, state.patFreq);
+      const phase = state.patPhase * Math.PI / 180;
+      const tri = u => 2 / Math.PI * Math.asin(Math.sin(u));
+      const wave = state.patShape === 'zigzag' ? tri : Math.sin;
+      let row = 0;
+      for (let y = spacing / 2; y <= H; y += spacing) {
+        const pts = [];
+        for (let x = 0; x <= W; x += step) {
+          pts.push([x, y + amp * wave(2 * Math.PI * freq * (x / W) + phase * row)]);
+        }
+        push(pts);
+        row++;
+      }
+      break;
+    }
+    case 'lissajous': {
+      const A = Math.max(0.1, state.patLissA);
+      const B = Math.max(0.1, state.patLissB);
+      const delta = state.patLissD * Math.PI / 180;
+      const turns = clamp(state.patLissTurns | 0, 1, 400);
+      const rx = W / 2 - 1, ry = H / 2 - 1;
+      const total = Math.max(600, Math.ceil(turns * 2 * Math.PI * Math.max(rx, ry) / Math.max(0.3, step) / 3));
+      const pts = [];
+      for (let i = 0; i <= total; i++) {
+        const t = (i / total) * turns * 2 * Math.PI;
+        pts.push([W / 2 + rx * Math.sin(A * t + delta), H / 2 + ry * Math.sin(B * t)]);
+      }
+      push(patResample(pts, step));
+      break;
+    }
+    case 'rose': {
+      const k = Math.max(0.1, state.patPetals);
+      const turns = clamp(state.patRoseTurns | 0, 1, 200);
+      const R = Math.min(W, H) / 2 - 1;
+      const total = Math.max(800, Math.ceil(turns * 2 * Math.PI * R / Math.max(0.3, step) / 3));
+      const pts = [];
+      for (let i = 0; i <= total; i++) {
+        const t = (i / total) * turns * Math.PI;
+        const r = R * Math.cos(k * t);
+        pts.push([W / 2 + r * Math.cos(t), H / 2 + r * Math.sin(t)]);
+      }
+      push(patResample(pts, step));
+      break;
+    }
+    case 'hilbert': {
+      const order = clamp(state.patHilbert | 0, 2, 9);
+      push(patHilbertPath(0, 0, W, H, order, step));
+      break;
+    }
+    case 'custom': patCustomPaths(W, H, step, out); break;
+  }
+
+  // Wobble rides along each path; for sine/zigzag it is already the shape.
+  const wobble = state.patAmp;
+  if (wobble > 0 && state.patShape !== 'sine' && state.patShape !== 'zigzag') {
+    const freq = Math.max(0.1, state.patFreq);
+    const phase = state.patPhase * Math.PI / 180;
+    const wavelength = Math.max(2, Math.min(W, H) / freq);
+    for (const p of out) {
+      const pts = p.pts;
+      let arc = 0;
+      for (let i = 0; i < pts.length; i++) {
+        if (i > 0) arc += Math.hypot(pts[i][0] - pts[i-1][0], pts[i][1] - pts[i-1][1]);
+        const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+        const dx = b[0] - a[0], dy = b[1] - a[1];
+        const len = Math.hypot(dx, dy) || 1;
+        const off = wobble * Math.sin(2 * Math.PI * arc / wavelength + phase * p.i);
+        pts[i] = [pts[i][0] + (-dy / len) * off, pts[i][1] + (dx / len) * off];
+      }
+    }
+  }
+
+  // Jitter is hashed, not random, so a regenerate reproduces the same hand.
+  const jit = state.patJitter;
+  if (jit > 0) {
+    for (const p of out) {
+      for (let i = 0; i < p.pts.length; i++) {
+        p.pts[i] = [
+          p.pts[i][0] + (patHash(p.i, i) - 0.5) * 2 * jit,
+          p.pts[i][1] + (patHash(p.i + 7919, i) - 0.5) * 2 * jit,
+        ];
+      }
+    }
+  }
+
+  const rot = state.patRotate * Math.PI / 180;
+  if (rot !== 0) {
+    const mx = W / 2, my = H / 2;
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    for (const p of out) {
+      for (let i = 0; i < p.pts.length; i++) {
+        const dx = p.pts[i][0] - mx, dy = p.pts[i][1] - my;
+        p.pts[i] = [mx + dx * cos - dy * sin, my + dx * sin + dy * cos];
+      }
+    }
+  }
+
+  return out;
+}
+
+function runPattern() {
+  if (!state.img || !state.crop) return null;
+  const c = state.crop;
+  const W = clamp(state.patWidth | 0, 120, 900);
+  const H = Math.max(1, Math.round(W * (c.h / c.w)));
+  const src = sampleCropToBuffer(W, H);
+  const lum = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) {
+    lum[i] = 0.2126 * src[i*4] + 0.7152 * src[i*4+1] + 0.0722 * src[i*4+2];
+  }
+  const valueAt = (x, y) => {
+    if (x < 0 || x >= W - 1 || y < 0 || y >= H - 1) return 255;
+    const x0 = Math.floor(x), y0 = Math.floor(y);
+    const fx = x - x0, fy = y - y0;
+    const i00 = y0 * W + x0;
+    return lum[i00] * (1 - fx) * (1 - fy)
+         + lum[i00 + 1] * fx * (1 - fy)
+         + lum[i00 + W] * (1 - fx) * fy
+         + lum[i00 + W + 1] * fx * fy;
+  };
+
+  const raw = patBuildPaths(W, H);
+  const minT = Math.max(0, state.patMin);
+  const maxT = Math.max(minT + 0.05, state.patMax);
+  const gamma = clamp(state.patGamma, 0.2, 4);
+  const cull = Math.max(0, state.patCull);
+  const darkThick = state.patDir === 'dark-thick';
+
+  const paths = [];
+  for (const p of raw) {
+    const pts = p.pts;
+    if (pts.length < 2) continue;
+    // A run is kept only while its weight clears the cull threshold.
+    let runPts = [], runThk = [];
+    const flush = () => {
+      if (runPts.length >= 2) paths.push({ points: runPts, thickness: runThk });
+      runPts = []; runThk = [];
+    };
+    for (let i = 0; i < pts.length; i++) {
+      const v = valueAt(pts[i][0], pts[i][1]) / 255;
+      const ink = darkThick ? 1 - v : v;
+      let t = minT + (maxT - minT) * Math.pow(clamp(ink, 0, 1), gamma);
+      if (p.w) t *= p.w[i];
+      if (t < cull) { flush(); continue; }
+      runPts.push(pts[i]);
+      runThk.push(t);
+    }
+    flush();
+  }
+  return { w: W, h: H, paths };
+}
+
+function patRibbonOutline(points, thickness) {
+  const top = [], bot = [];
+  for (let i = 0; i < points.length; i++) {
+    const a = points[Math.max(0, i - 1)];
+    const b = points[Math.min(points.length - 1, i + 1)];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    const h = thickness[i] / 2;
+    top.push([points[i][0] + nx * h, points[i][1] + ny * h]);
+    bot.push([points[i][0] - nx * h, points[i][1] - ny * h]);
+  }
+  return top.concat(bot.reverse());
+}
+
+function drawPattern(ctx, data) {
+  const targetW = 720;
+  const targetH = Math.max(1, Math.round(targetW * (data.h / data.w)));
+  const scale = targetW / data.w;
+  ctx.canvas.width = targetW;
+  ctx.canvas.height = targetH;
+  ctx.fillStyle = state.patBg;
+  ctx.fillRect(0, 0, targetW, targetH);
+  if (!data.paths.length) return;
+
+  if (state.patRender === 'ribbon') {
+    ctx.fillStyle = state.patFg;
+    ctx.beginPath();
+    for (const p of data.paths) {
+      const poly = patRibbonOutline(p.points, p.thickness);
+      if (poly.length < 3) continue;
+      ctx.moveTo(poly[0][0] * scale, poly[0][1] * scale);
+      for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i][0] * scale, poly[i][1] * scale);
+      ctx.closePath();
+    }
+    ctx.fill();
+    return;
+  }
+
+  ctx.strokeStyle = state.patFg;
+  ctx.lineCap = state.patCap;
+  ctx.lineJoin = 'round';
+  for (const p of data.paths) {
+    const pts = p.points;
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineWidth = Math.max(0.05, (p.thickness[i - 1] + p.thickness[i]) / 2 * scale);
+      ctx.beginPath();
+      ctx.moveTo(pts[i - 1][0] * scale, pts[i - 1][1] * scale);
+      ctx.lineTo(pts[i][0] * scale, pts[i][1] * scale);
+      ctx.stroke();
+    }
+  }
+}
+
+function buildPatternSVG(data) {
+  const lines = [];
+  lines.push(`<?xml version="1.0" encoding="UTF-8"?>`);
+  lines.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${data.w}" height="${data.h}" viewBox="0 0 ${data.w} ${data.h}">`);
+  lines.push(`  <desc>Value-Map pattern. ${state.patShape}, spacing ${state.patSpacing}, thickness ${state.patMin}–${state.patMax}.</desc>`);
+  lines.push(`  <rect width="${data.w}" height="${data.h}" fill="${state.patBg}"/>`);
+  if (state.patRender === 'ribbon') {
+    lines.push(`  <g fill="${state.patFg}">`);
+    for (const p of data.paths) {
+      const poly = patRibbonOutline(p.points, p.thickness);
+      if (poly.length < 3) continue;
+      lines.push(`    <polygon points="${poly.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ')}"/>`);
+    }
+    lines.push(`  </g>`);
+  } else {
+    lines.push(`  <g fill="none" stroke="${state.patFg}" stroke-linecap="${state.patCap}" stroke-linejoin="round">`);
+    for (const p of data.paths) {
+      const pts = p.points;
+      for (let i = 1; i < pts.length; i++) {
+        const w = ((p.thickness[i - 1] + p.thickness[i]) / 2).toFixed(3);
+        lines.push(`    <line x1="${pts[i-1][0].toFixed(2)}" y1="${pts[i-1][1].toFixed(2)}" x2="${pts[i][0].toFixed(2)}" y2="${pts[i][1].toFixed(2)}" stroke-width="${w}"/>`);
+      }
+    }
+    lines.push(`  </g>`);
   }
   lines.push(`</svg>`);
   return lines.join('\n');
@@ -8429,6 +9246,10 @@ function computeValueMap() {
     state.spiData = runSpiral();
     state.cellStripes = null;
     state.cellLens = null;
+  } else if (state.mode === 'pattern') {
+    state.patData = runPattern();
+    state.cellStripes = null;
+    state.cellLens = null;
   } else if (state.mode === 'flow') {
     state.flowData = runFlow();
     state.cellStripes = null;
@@ -8787,6 +9608,21 @@ function renderMosaic() {
     $('#mosaic-palette-legend').style.display = 'none';
     return;
   }
+  if (state.mode === 'pattern') {
+    if (!state.patData) return;
+    drawPattern(canvas.getContext('2d'), state.patData);
+    if (state.patShape === 'custom') patSizePad();
+    $('#gray-meta').textContent =
+      `${state.patData.w}×${state.patData.h} · ${state.patShape} · ${state.patData.paths.length} paths`;
+    $('#mosaic-title').textContent = 'Pattern preview';
+    $('#gray-legend').style.display = 'flex';
+    $('#legend-low').textContent = state.patDir === 'dark-thick' ? 'thin' : 'thick';
+    $('#legend-high').textContent = state.patDir === 'dark-thick' ? 'thick' : 'thin';
+    $('#gray-legend .bar').style.background =
+      `linear-gradient(to right, ${state.patBg}, ${state.patFg})`;
+    $('#mosaic-palette-legend').style.display = 'none';
+    return;
+  }
   if (state.mode === 'tsp') {
     if (!state.tspData) return;
     drawTSP(canvas.getContext('2d'), state.tspData);
@@ -9068,6 +9904,18 @@ function renderNumberGrid() {
     drawSpiral(canvas.getContext('2d'), state.spiData);
     $('#num-meta').textContent = `${state.spiData.w}×${state.spiData.h}`;
     $('#num-hint').textContent = 'Use Spiral SVG to export as a closed ribbon polygon.';
+    $('#num-palette-legend').style.display = 'none';
+    return;
+  }
+  if (state.mode === 'pattern') {
+    if (!state.patData) return;
+    drawPattern(canvas.getContext('2d'), state.patData);
+    $('#num-meta').textContent = `${state.patData.w}×${state.patData.h} · ${state.patData.paths.length} paths`;
+    $('#num-hint').textContent = (state.patShape === 'custom' && !state.patStrokes.length)
+      ? 'Draw on the pad in the Pattern panel — your marks become the lines.'
+      : state.patRender === 'ribbon'
+        ? 'Pattern SVG exports closed outlines — ready to cut or plot.'
+        : 'Pattern SVG exports variable-width strokes. Switch to Ribbon outline for cutting.';
     $('#num-palette-legend').style.display = 'none';
     return;
   }
@@ -9363,6 +10211,8 @@ function generate() {
                                 ? 'Pixel-sort PNG'
                                 : state.mode === 'spiral'
                                   ? 'Spiral SVG'
+                                  : state.mode === 'pattern'
+                                  ? 'Pattern SVG'
                                   : state.mode === 'flow'
                                     ? 'Flow SVG'
                                     : state.mode === 'brush'
@@ -9468,6 +10318,8 @@ $$('#mode button').forEach(btn => {
     $('#mode-tsp').style.display = state.mode === 'tsp' ? '' : 'none';
     $('#mode-psort').style.display = state.mode === 'psort' ? '' : 'none';
     $('#mode-spiral').style.display = state.mode === 'spiral' ? '' : 'none';
+    $('#mode-pattern').style.display = state.mode === 'pattern' ? '' : 'none';
+    if (state.mode === 'pattern') syncPatternPanel();
     $('#mode-flow').style.display = state.mode === 'flow' ? '' : 'none';
     $('#mode-brush').style.display = state.mode === 'brush' ? '' : 'none';
     $('#mode-hex').style.display = state.mode === 'hex' ? '' : 'none';
@@ -10320,6 +11172,206 @@ function bindSpiColor(prefix, key) {
 }
 bindSpiColor('spiFg', 'spiFg');
 bindSpiColor('spiBg', 'spiBg');
+
+/* Pattern wiring */
+function patNum(id, key, lo, hi, float) {
+  const el = $('#' + id);
+  if (!el) return;
+  el.addEventListener('input', e => {
+    const raw = float ? parseFloat(e.target.value) : parseInt(e.target.value, 10);
+    if (!Number.isFinite(raw)) return;
+    state[key] = clamp(raw, lo, hi);
+    autoGenerateDebounced();
+  });
+}
+function patToggle(sel, attr, key, after) {
+  $$(sel + ' button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      $$(sel + ' button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      state[key] = btn.dataset[attr];
+      if (after) after();
+      autoGenerateDebounced();
+    });
+  });
+}
+
+const PAT_RADIAL_SHAPES = new Set(['spiral', 'rings', 'squares', 'poly', 'rays', 'phyllo']);
+
+function syncPatternPanel() {
+  const s = state.patShape;
+  $('#pat-custom').style.display = s === 'custom' ? '' : 'none';
+  $('#pat-extra-poly').style.display = (s === 'poly' || s === 'phyllo') ? '' : 'none';
+  $('#pat-extra-rays').style.display = s === 'rays' ? '' : 'none';
+  $('#pat-extra-liss').style.display = s === 'lissajous' ? '' : 'none';
+  $('#pat-extra-rose').style.display = s === 'rose' ? '' : 'none';
+  $('#pat-extra-hilbert').style.display = s === 'hilbert' ? '' : 'none';
+  $('#pat-extra-center').style.display = PAT_RADIAL_SHAPES.has(s) ? '' : 'none';
+  $('#pat-custom-tile').style.display = state.patCustomMode === 'tile' ? '' : 'none';
+  $('#pat-custom-radial').style.display = state.patCustomMode === 'radial' ? '' : 'none';
+  if (s === 'custom') patSizePad();
+}
+
+$('#patShape').addEventListener('change', e => {
+  state.patShape = e.target.value;
+  // Sine and zigzag are nothing without amplitude — seed one the first time.
+  if ((state.patShape === 'sine' || state.patShape === 'zigzag') && state.patAmp === 0) {
+    state.patAmp = Math.round(state.patSpacing * 0.6 * 10) / 10;
+    $('#patAmp').value = state.patAmp;
+  }
+  syncPatternPanel();
+  autoGenerateDebounced();
+});
+
+patNum('patWidth', 'patWidth', 120, 900, false);
+patNum('patSpacing', 'patSpacing', 1, 60, true);
+patNum('patStep', 'patStep', 0.3, 8, true);
+patNum('patMin', 'patMin', 0, 30, true);
+patNum('patMax', 'patMax', 0.2, 60, true);
+patNum('patGamma', 'patGamma', 0.2, 4, true);
+patNum('patCull', 'patCull', 0, 30, true);
+patNum('patRotate', 'patRotate', -180, 180, true);
+patNum('patCenterX', 'patCenterX', -50, 150, true);
+patNum('patCenterY', 'patCenterY', -50, 150, true);
+patNum('patAmp', 'patAmp', 0, 60, true);
+patNum('patFreq', 'patFreq', 0.1, 40, true);
+patNum('patPhase', 'patPhase', -360, 360, true);
+patNum('patJitter', 'patJitter', 0, 20, true);
+patNum('patSides', 'patSides', 3, 24, false);
+patNum('patRays', 'patRays', 4, 1200, false);
+patNum('patLissA', 'patLissA', 1, 30, true);
+patNum('patLissB', 'patLissB', 1, 30, true);
+patNum('patLissD', 'patLissD', 0, 360, true);
+patNum('patLissTurns', 'patLissTurns', 1, 400, false);
+patNum('patPetals', 'patPetals', 0.1, 30, true);
+patNum('patRoseTurns', 'patRoseTurns', 1, 200, false);
+patNum('patHilbert', 'patHilbert', 2, 9, false);
+patNum('patTileCols', 'patTileCols', 1, 60, false);
+patNum('patTileRows', 'patTileRows', 1, 60, false);
+patNum('patTileScale', 'patTileScale', 10, 200, true);
+patNum('patTileRot', 'patTileRot', -180, 180, true);
+patNum('patRadialCopies', 'patRadialCopies', 2, 120, false);
+
+patToggle('#pat-dir', 'dir', 'patDir');
+patToggle('#pat-render', 'render', 'patRender');
+patToggle('#pat-cap', 'cap', 'patCap');
+patToggle('#pat-custom-mode', 'cm', 'patCustomMode', syncPatternPanel);
+bindSpiColor('patFg', 'patFg');
+bindSpiColor('patBg', 'patBg');
+
+/* Custom mark pad — strokes are stored normalized so they survive
+   resolution changes and re-crops. */
+let patTool = 'free';
+let patDrawing = null;
+
+function patSizePad() {
+  const cv = $('#patDrawCanvas');
+  const aspect = state.crop ? state.crop.h / state.crop.w : 1;
+  const h = clamp(Math.round(280 * aspect), 80, 520);
+  if (cv.height !== h) cv.height = h;
+  patRedrawPad();
+}
+
+function patRedrawPad() {
+  const cv = $('#patDrawCanvas');
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  if (state.img && state.crop) {
+    const c = state.crop;
+    ctx.globalAlpha = 0.28;
+    ctx.drawImage(state.img, c.x, c.y, c.w, c.h, 0, 0, cv.width, cv.height);
+    ctx.globalAlpha = 1;
+  }
+  ctx.strokeStyle = '#1A1A1A';
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const paint = stroke => {
+    if (stroke.length < 2) return;
+    ctx.beginPath();
+    ctx.moveTo(stroke[0][0] * cv.width, stroke[0][1] * cv.height);
+    for (let i = 1; i < stroke.length; i++) ctx.lineTo(stroke[i][0] * cv.width, stroke[i][1] * cv.height);
+    ctx.stroke();
+  };
+  state.patStrokes.forEach(paint);
+  if (patDrawing) paint(patDrawing);
+}
+
+function patPadPoint(ev) {
+  const cv = $('#patDrawCanvas');
+  const r = cv.getBoundingClientRect();
+  return [
+    clamp((ev.clientX - r.left) / r.width, 0, 1),
+    clamp((ev.clientY - r.top) / r.height, 0, 1),
+  ];
+}
+
+function patShapeStroke(a, b) {
+  if (patTool === 'line') return [a, b];
+  if (patTool === 'rect') return [a, [b[0], a[1]], b, [a[0], b[1]], a];
+  const cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2;
+  const rx = Math.abs(b[0] - a[0]) / 2, ry = Math.abs(b[1] - a[1]) / 2;
+  const pts = [];
+  for (let i = 0; i <= 64; i++) {
+    const t = (i / 64) * Math.PI * 2;
+    pts.push([cx + rx * Math.cos(t), cy + ry * Math.sin(t)]);
+  }
+  return pts;
+}
+
+(() => {
+  const cv = $('#patDrawCanvas');
+  let anchor = null;
+  cv.addEventListener('pointerdown', ev => {
+    ev.preventDefault();
+    cv.setPointerCapture(ev.pointerId);
+    anchor = patPadPoint(ev);
+    patDrawing = patTool === 'free' ? [anchor] : [anchor, anchor];
+    patRedrawPad();
+  });
+  cv.addEventListener('pointermove', ev => {
+    if (!patDrawing) return;
+    const p = patPadPoint(ev);
+    if (patTool === 'free') {
+      const last = patDrawing[patDrawing.length - 1];
+      if (Math.hypot(p[0] - last[0], p[1] - last[1]) < 0.006) return;
+      patDrawing.push(p);
+    } else {
+      patDrawing = patShapeStroke(anchor, p);
+    }
+    patRedrawPad();
+  });
+  const finish = () => {
+    if (patDrawing && patDrawing.length >= 2) {
+      state.patStrokes.push(patDrawing);
+      autoGenerateDebounced();
+    }
+    patDrawing = null;
+    anchor = null;
+    patRedrawPad();
+  };
+  cv.addEventListener('pointerup', finish);
+  cv.addEventListener('pointercancel', finish);
+})();
+
+$$('#pat-tool button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('#pat-tool button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    patTool = btn.dataset.tool;
+  });
+});
+$('#patUndo').addEventListener('click', () => {
+  state.patStrokes.pop();
+  patRedrawPad();
+  autoGenerateDebounced();
+});
+$('#patClear').addEventListener('click', () => {
+  state.patStrokes = [];
+  patRedrawPad();
+  autoGenerateDebounced();
+});
 
 /* Flow wiring */
 $('#flowWidth').addEventListener('input', e => {
@@ -14299,6 +15351,19 @@ $('#export-gray').addEventListener('click', async () => {
     const a = document.createElement('a');
     a.href = url;
     a.download = `value-map-spiral_${state.spiData.w}x${state.spiData.h}_stride${state.spiStride}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return;
+  } else if (state.mode === 'pattern') {
+    if (!state.patData) return;
+    const svg = buildPatternSVG(state.patData);
+    const blob = new Blob([svg], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `value-map-pattern_${state.patShape}_${state.patData.w}x${state.patData.h}.svg`;
     document.body.appendChild(a);
     a.click();
     a.remove();
