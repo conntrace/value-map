@@ -1,6 +1,6 @@
 # Value Map
 
-Single-file web app that turns an image into a paint-by-numbers reference and 30+ different artist-usable outputs — paint guides, papercut SVGs, halftone separations, knitting/cross-stitch/perler-bead charts, string-art instructions, pen-plotter paths, and more.
+Single-file web app that turns an image into practical art-making plans — paint guides, papercut SVGs, textile drafts, print separations, light-installation templates, playable scores, sculpture profiles, and measured fabrication schedules.
 
 The original purpose was the **value map**: feed in a reference photo, get a numbered grid showing the value (lightness) of each cell so a painter can block in tones by number. That core mode is still there, but the app has grown into a sandbox for translating images into physical-art instructions.
 
@@ -25,10 +25,23 @@ The whole app is one file: [`index.html`](index.html). Either:
 
 Quick categories:
 
-- **Paint-by-number guides** with numbered cells: Values, Palette, Arc, Zones, Dots, Hatch, Stipple, Hex/Tile/Triangle/Low-poly (palette mode), Brush (palette mode), Pixel (cross-stitch chart), Bead
-- **Vector cuttable / plottable**: Cut, Dither (stencil), Contour, TSP, Spiral, Pattern, Flow, Brush, Layers
-- **Print production**: CMYK separations (4 inks), Riso separations (custom inks)
-- **Final-output art**: Pixel sort, Glitch
+- **Paint and mark-making guides**: Values, Palette, Arc, Zones, Dots, continuous Hatch, Stipple, Low-poly, Brush, Bead
+- **Vector cuttable / plottable**: Cut, Dither (stencil), Contour, TSP, Spiral, Pattern, Flow, Brush, Low-poly, Layers, Ribs, Fold Tabs, Rod Field and Light Holes drilling guides
+- **Print production**: CMYK separations (4 inks), Riso separations (custom inks), Cyanotype Stack (registered timed-exposure masks)
+- **Measured fabrication systems**: Low-poly and Voronoi (numbered part maps + schedules), Ribs (cut profiles), Fold Tabs (cut/score relief), Rod Field (drilling guide + exact cut list), Light Holes (full-scale perforation template + bit schedule)
+- **Textile production**: Weave Draft (two-yarn lift plan), Quilt Blocks, and Embroidery Chart (symbols, fabric size, and floss totals)
+- **Performance and sound art**: Sound Score (graphic score, playable browser preview, MIDI, and event list)
+- **Illuminated, kinetic, and ceramic work**: Neon Route (full-size bend plan + tube cut list), Flip Wall (hinge map + actuator schedule), Glaze Tiles (kiln map + glaze batches)
+- **Sewn construction**: Quilt Blocks (two-fabric recipe chart + fabric cut totals)
+- **Everyday-object making**: Object Mosaic (found-object inventory + full-size placement template), Shadow Mobile (caps, washers, buttons, or paper-disc hanging plans)
+- **Transfer and illusion systems**: Projection Trace (keystone-corrected mural projection), Anamorphic View (single-viewpoint floor/wall distortion)
+- **Optical constructions**: Cylinder Mirror (catoptric print), Moiré Reveal (paper base + transparent grating), Shadow Gobo (bridged lamp stencil), Mirror Field (aimed reflective tiles)
+- **Traditional material translations**: Thread Portrait, Leaded Glass, Veneer Grain, Brick Relief, and Paper Quilling
+- **Book, fiber, and granular work**: Book Fold, Tufted Rug, Macramé Knots, Sand Painting, and Matchstick Inlay
+- **Participatory and living work**: Card Stunt and Living Mosaic
+- **Folded and reflected illusions**: Pleat Picture and Pepper's Ghost
+- **Flexible construction panels**: Kerf-Bent Panel with full-size cut map and depth schedule
+- **Paint preparation**: Paint Mixer (extracted palette, paint-number map, and measured modern-primary recipes)
 - **Physical-art instruction sets**: ASCII (text dump)
 
 ## Live camera
